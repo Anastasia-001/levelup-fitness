@@ -1,0 +1,26 @@
+import { RoutePoint } from '@/types/domain';
+
+const toRadians = (value: number) => (value * Math.PI) / 180;
+
+export const distanceBetweenMeters = (a: RoutePoint, b: RoutePoint) => {
+  const earthRadius = 6371000;
+  const dLat = toRadians(b.latitude - a.latitude);
+  const dLon = toRadians(b.longitude - a.longitude);
+  const lat1 = toRadians(a.latitude);
+  const lat2 = toRadians(b.latitude);
+
+  const h =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+  return 2 * earthRadius * Math.asin(Math.sqrt(h));
+};
+
+export const routeDistanceMeters = (points: RoutePoint[]) =>
+  points.reduce((total, point, index) => {
+    if (index === 0) {
+      return 0;
+    }
+
+    return total + distanceBetweenMeters(points[index - 1], point);
+  }, 0);

@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "LevelUp Fitness",
+    "slug": "levelup-fitness",
+    "scheme": "levelupfitness",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": ["**/*"],
+    "plugins": ["expo-router", "expo-location"],
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "LevelUp Fitness uses location to record GPS workouts and calculate distance."
+      }
+    },
+    "android": {
+      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      }
+    }
+  }
+}
