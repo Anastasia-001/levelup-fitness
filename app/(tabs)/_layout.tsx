@@ -6,11 +6,11 @@ import { useBootstrap } from '@/hooks/useBootstrap';
 import { supabase } from '@/lib/supabase';
 
 const icons = {
-  record: 'radio',
-  activities: 'list',
-  character: 'person',
-  missions: 'flag',
-  profile: 'settings'
+  record: 'radio-outline',
+  shop: 'storefront-outline',
+  character: 'person-circle-outline',
+  missions: 'sparkles-outline',
+  profile: 'settings-outline'
 } as const;
 
 export default function TabsLayout() {
@@ -31,8 +31,10 @@ export default function TabsLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.faint,
         tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border
+          backgroundColor: colors.card,
+          borderTopColor: colors.borderDim,
+          minHeight: 74,
+          paddingTop: 8
         },
         tabBarIcon: ({ color, size }) => (
           <Ionicons name={icons[route.name as keyof typeof icons]} size={size} color={color} />
@@ -40,7 +42,7 @@ export default function TabsLayout() {
       })}
     >
       <Tabs.Screen name="record" options={{ title: 'Record' }} />
-      <Tabs.Screen name="activities" options={{ title: 'Activities' }} />
+      <Tabs.Screen name="shop" options={{ title: 'Shop' }} />
       <Tabs.Screen name="character" options={{ title: 'Character' }} />
       <Tabs.Screen name="missions" options={{ title: 'Missions' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />

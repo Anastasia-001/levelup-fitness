@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, ViewStyle } from 'react-native';
 import { AppText } from '@/components/AppText';
-import { colors, radii, spacing } from '@/constants/theme';
+import { colors, radii, shadows, spacing } from '@/constants/theme';
 
 type PrimaryButtonProps = {
   label: string;
@@ -34,22 +34,25 @@ export const PrimaryButton = ({
 
 const styles = StyleSheet.create({
   button: {
-    minHeight: 48,
-    borderRadius: radii.sm,
+    minHeight: 54,
+    borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: spacing.md
-  },
-  primary: {
-    backgroundColor: colors.primary
-  },
-  secondary: {
-    backgroundColor: colors.surfaceHigh,
-    borderColor: colors.border,
+    paddingHorizontal: spacing.lg,
     borderWidth: 1
   },
+  primary: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+    ...shadows.cyanGlow
+  },
+  secondary: {
+    backgroundColor: colors.cardHigh,
+    borderColor: colors.border
+  },
   danger: {
-    backgroundColor: colors.danger
+    backgroundColor: colors.danger,
+    borderColor: colors.danger
   },
   disabled: {
     opacity: 0.45
@@ -58,7 +61,7 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.98 }]
   },
   label: {
-    fontWeight: '800'
+    fontWeight: '900'
   },
   primaryLabel: {
     color: '#04110E'

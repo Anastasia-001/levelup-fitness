@@ -1,9 +1,9 @@
 import * as Location from 'expo-location';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
-import MapView, { Polyline } from 'react-native-maps';
 import { AppText } from '@/components/AppText';
 import { Card } from '@/components/Card';
+import { FitnessMap } from '@/components/FitnessMap';
 import { MetricTile } from '@/components/MetricTile';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { Screen } from '@/components/Screen';
@@ -28,6 +28,7 @@ export default function RecordScreen() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [distanceMeters, setDistanceMeters] = useState(0);
   const [route, setRoute] = useState<RoutePoint[]>([]);
+  const [currentPoint, setCurrentPoint] = useState<RoutePoint | null>(null);
   const [durationMinutes, setDurationMinutes] = useState('');
   const [sets, setSets] = useState('');
   const [reps, setReps] = useState('');
@@ -70,16 +71,6 @@ export default function RecordScreen() {
   }, [recordingState]);
 
   const selectedIsGps = isGpsActivity(selectedType);
-  const mapRegion = useMemo(() => {
-    const last = route[route.length - 1];
-    return {
-      latitude: last?.latitude ?? 37.78825,
-      longitude: last?.longitude ?? -122.4324,
-      latitudeDelta: 0.01,
-      longitudeDelta: 0.01
-    };
-  }, [route]);
-
   const startGps = async () => {
     const permission = await Location.requestForegroundPermissionsAsync();
     if (permission.status !== 'granted') {
@@ -90,6 +81,7 @@ export default function RecordScreen() {
     setElapsedSeconds(0);
     setDistanceMeters(0);
     setRoute([]);
+    setCurrentPoint(null);
     setRecordingState('recording');
 
     watchRef.current = await Location.watchPositionAsync(
@@ -111,6 +103,7 @@ export default function RecordScreen() {
           timestamp: location.timestamp
         };
 
+        setCurrentPoint(point);
         setRoute((current) => {
           const last = current[current.length - 1];
           if (last) {
@@ -169,7 +162,7 @@ export default function RecordScreen() {
   };
 
   return (
-    <Screen scroll={!selectedIsGps || route.length === 0}>
+    <Screen scroll={!selectedIsGps}>
       <View>
         <AppText variant="caption" style={{ color: colors.primary }}>
           Record
@@ -177,20 +170,22 @@ export default function RecordScreen() {
         <AppText variant="title">Choose your activity</AppText>
       </View>
 
-      <View style={styles.optionsGrid}>
-        {[...GPS_ACTIVITY_TYPES, ...MANUAL_ACTIVITY_TYPES].map((type) => (
-          <Pressable
-            key={type}
-            onPress={() => recordingState === 'idle' && setSelectedType(type)}
-            style={[styles.option, selectedType === type && styles.optionActive]}
-          >
-            <AppText style={selectedType === type && styles.optionTextActive}>{ACTIVITY_LABELS[type]}</AppText>
-          </Pressable>
-        ))}
-      </View>
+      {recordingState === 'idle' && (
+        <View style={styles.optionsGrid}>
+          {[...GPS_ACTIVITY_TYPES, ...MANUAL_ACTIVITY_TYPES].map((type) => (
+            <Pressable
+              key={type}
+              onPress={() => setSelectedType(type)}
+              style={[styles.option, selectedType === type && styles.optionActive]}
+            >
+              <AppText style={selectedType === type && styles.optionTextActive}>{ACTIVITY_LABELS[type]}</AppText>
+            </Pressable>
+          ))}
+        </View>
+      )}
 
       {selectedIsGps ? (
-        <>
+        <View style={styles.gpsLayout}>
           <View style={styles.metricsRow}>
             <MetricTile label="Time" value={formatDuration(elapsedSeconds)} />
             <MetricTile label="Distance" value={formatDistance(distanceMeters, units)} />
@@ -200,11 +195,16 @@ export default function RecordScreen() {
             <MetricTile label="Route points" value={String(route.length)} />
           </View>
 
-          {route.length > 0 && (
-            <MapView style={styles.map} region={mapRegion}>
-              <Polyline coordinates={route} strokeColor={colors.primary} strokeWidth={5} />
-            </MapView>
-          )}
+          <View style={styles.mapShell}>
+            <FitnessMap route={route} currentPoint={currentPoint} />
+            {route.length === 0 && (
+              <View pointerEvents="none" style={styles.mapEmpty}>
+                <AppText variant="caption" style={{ color: colors.primary }}>
+                  GPS route will appear here
+                </AppText>
+              </View>
+            )}
+          </View>
 
           <View style={styles.controls}>
             {recordingState === 'idle' && <PrimaryButton label="Start GPS" onPress={startGps} disabled={saving} />}
@@ -214,7 +214,7 @@ export default function RecordScreen() {
               <PrimaryButton label={saving ? 'Saving...' : 'Stop and save'} variant="danger" onPress={stopGps} disabled={saving || elapsedSeconds < 5} />
             )}
           </View>
-        </>
+        </View>
       ) : (
         <Card>
           <AppText variant="subtitle">{ACTIVITY_LABELS[selectedType]}</AppText>
@@ -237,22 +237,23 @@ const styles = StyleSheet.create({
   optionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm
+    gap: spacing.sm,
+    flexShrink: 0
   },
   option: {
     width: '47.8%',
     minHeight: 48,
-    borderRadius: radii.sm,
+    borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.card,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.sm
   },
   optionActive: {
     borderColor: colors.primary,
-    backgroundColor: colors.primaryDim
+    backgroundColor: colors.primarySoft
   },
   optionTextActive: {
     color: colors.text,
@@ -262,12 +263,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm
   },
-  map: {
+  gpsLayout: {
     flex: 1,
-    minHeight: 260,
-    borderRadius: radii.md
+    gap: spacing.sm,
+    minHeight: 0
+  },
+  mapShell: {
+    height: 190,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    backgroundColor: colors.black
+  },
+  mapEmpty: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(3, 7, 19, 0.45)'
   },
   controls: {
-    gap: spacing.sm
+    gap: spacing.sm,
+    flexShrink: 0,
+    paddingTop: spacing.xs
   }
 });

@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { colors, radii, spacing } from '@/constants/theme';
+import { colors, radii, shadows, spacing } from '@/constants/theme';
 
 export const Card = ({ children }: { children: ReactNode }) => (
   <View style={styles.card}>{children}</View>
@@ -8,11 +8,12 @@ export const Card = ({ children }: { children: ReactNode }) => (
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: colors.card,
+    borderColor: colors.borderDim,
     borderWidth: 1,
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     padding: spacing.md,
-    gap: spacing.sm
+    gap: spacing.sm,
+    ...shadows.card
   }
 });

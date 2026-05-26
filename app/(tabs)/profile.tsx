@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { AppText } from '@/components/AppText';
 import { Card } from '@/components/Card';
 import { PrimaryButton } from '@/components/PrimaryButton';
@@ -19,6 +19,7 @@ export default function ProfileScreen() {
   const [username, setUsername] = useState(profile?.username ?? '');
   const [unitPreference, setUnitPreference] = useState<UnitPreference>(profile?.unitPreference ?? 'metric');
   const [saving, setSaving] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     if (profile) {
@@ -80,6 +81,7 @@ export default function ProfileScreen() {
 
       <Card>
         <AppText variant="subtitle">Account</AppText>
+        <PrimaryButton label="Activity History" variant="secondary" onPress={() => router.push('/activity-history')} />
         <PrimaryButton label="Logout" variant="secondary" onPress={logout} />
         <PrimaryButton label="Delete account placeholder" variant="danger" onPress={() => Alert.alert('Delete account', 'Account deletion flow placeholder.')} />
         <PrimaryButton label="Privacy policy placeholder" variant="secondary" onPress={() => Alert.alert('Privacy policy', 'Privacy policy placeholder.')} />
@@ -98,13 +100,13 @@ const styles = StyleSheet.create({
     minHeight: 44,
     borderRadius: radii.sm,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderDim,
     alignItems: 'center',
     justifyContent: 'center'
   },
   segmentActive: {
     borderColor: colors.primary,
-    backgroundColor: colors.primaryDim
+    backgroundColor: colors.primarySoft
   },
   segmentTextActive: {
     fontWeight: '800'

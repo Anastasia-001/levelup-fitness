@@ -1,5 +1,5 @@
 import { Text, TextProps, StyleSheet } from 'react-native';
-import { colors } from '@/constants/theme';
+import { colors, typography } from '@/constants/theme';
 
 type AppTextProps = TextProps & {
   variant?: 'title' | 'subtitle' | 'body' | 'caption' | 'metric';
@@ -16,25 +16,25 @@ const styles = StyleSheet.create({
     letterSpacing: 0
   },
   title: {
-    fontSize: 28,
-    fontWeight: '800'
+    fontSize: typography.title,
+    fontWeight: '900'
   },
   subtitle: {
-    fontSize: 18,
-    fontWeight: '700'
+    fontSize: typography.subtitle,
+    fontWeight: '800'
   },
   body: {
-    fontSize: 15,
+    fontSize: typography.body,
     lineHeight: 21
   },
   caption: {
-    fontSize: 12,
+    fontSize: typography.caption,
     fontWeight: '600',
     textTransform: 'uppercase'
   },
   metric: {
-    fontSize: 24,
-    fontWeight: '800'
+    fontSize: typography.metric,
+    fontWeight: '900'
   },
   muted: {
     color: colors.muted

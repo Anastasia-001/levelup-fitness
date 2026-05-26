@@ -15,8 +15,10 @@ const styles = StyleSheet.create({
   tile: {
     flex: 1,
     minHeight: 78,
-    borderRadius: radii.sm,
-    backgroundColor: colors.surfaceHigh,
+    borderRadius: radii.md,
+    backgroundColor: colors.cardHigh,
+    borderColor: colors.borderDim,
+    borderWidth: 1,
     padding: spacing.sm,
     justifyContent: 'center',
     gap: 4

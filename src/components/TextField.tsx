@@ -12,10 +12,10 @@ export const TextField = (props: TextInputProps) => (
 const styles = StyleSheet.create({
   input: {
     minHeight: 48,
-    borderRadius: radii.sm,
-    borderColor: colors.border,
+    borderRadius: radii.md,
+    borderColor: colors.borderDim,
     borderWidth: 1,
-    backgroundColor: colors.surfaceHigh,
+    backgroundColor: colors.cardHigh,
     color: colors.text,
     paddingHorizontal: spacing.md,
     fontSize: 16
