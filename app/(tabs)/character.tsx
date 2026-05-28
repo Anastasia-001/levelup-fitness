@@ -1,14 +1,20 @@
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
+import { AvatarPreview } from '@/components/AvatarPreview';
 import { Card } from '@/components/Card';
+import { CosmeticThumbnail } from '@/components/CosmeticThumbnail';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { ProgressBar } from '@/components/ProgressBar';
 import { Screen } from '@/components/Screen';
-import { colors, radii, shadows, spacing } from '@/constants/theme';
+import { CATEGORY_LABELS, COSMETIC_CATEGORIES, visibleCosmeticsForCategory } from '@/constants/cosmetics';
+import { colors, radii, spacing } from '@/constants/theme';
+import { supabase } from '@/lib/supabase';
+import { equipCosmetic } from '@/services/cosmeticService';
 import { useAppStore } from '@/store/appStore';
+import { CosmeticCategory, CosmeticItem } from '@/types/domain';
 import { levelFromTotalExp, statLevel } from '@/utils/exp';
-import { useState } from 'react';
 
 const statRows = [
   ['Endurance', 'enduranceExp'],
@@ -20,9 +26,9 @@ const statRows = [
 export default function CharacterScreen() {
   const character = useAppStore((state) => state.character);
   const profile = useAppStore((state) => state.profile);
+  const equippedCosmetics = useAppStore((state) => state.equippedCosmetics);
   const progress = character ? levelFromTotalExp(character.totalExp) : null;
   const [customizing, setCustomizing] = useState(false);
-  const coins = Math.floor((character?.totalExp ?? 0) / 5) + 120;
 
   return (
     <Screen>
@@ -39,7 +45,7 @@ export default function CharacterScreen() {
         </View>
         <View style={styles.coins}>
           <Ionicons name="diamond" size={16} color={colors.coin} />
-          <AppText style={styles.coinText}>{coins}</AppText>
+          <AppText style={styles.coinText}>{character?.coins ?? 0}</AppText>
         </View>
       </View>
 
@@ -48,8 +54,8 @@ export default function CharacterScreen() {
           <View style={styles.levelBadge}>
             <AppText style={styles.levelBadgeText}>LVL {character?.level ?? 1}</AppText>
           </View>
-          <PixelAvatar />
-          <AppText muted>Tap to customize cosmetics</AppText>
+          <AvatarPreview equipment={equippedCosmetics} />
+          <AppText muted>Tap to open wardrobe</AppText>
         </Pressable>
         <View>
           <AppText variant="subtitle">Total EXP: {character?.totalExp ?? 0}</AppText>
@@ -75,30 +81,43 @@ export default function CharacterScreen() {
         })}
       </View>
 
-      <CustomizationModal visible={customizing} onClose={() => setCustomizing(false)} />
+      <WardrobeModal visible={customizing} onClose={() => setCustomizing(false)} />
     </Screen>
   );
 }
 
-const PixelAvatar = () => (
-  <View style={styles.avatarWrap}>
-    <View style={styles.aura} />
-    <View style={styles.head} />
-    <View style={styles.neck} />
-    <View style={styles.body}>
-      <View style={styles.chestGlow} />
-    </View>
-    <View style={styles.armLeft} />
-    <View style={styles.armRight} />
-    <View style={styles.legLeft} />
-    <View style={styles.legRight} />
-    <View style={styles.shoeLeft} />
-    <View style={styles.shoeRight} />
-  </View>
-);
+const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => void }) => {
+  const character = useAppStore((state) => state.character);
+  const ownedCosmetics = useAppStore((state) => state.ownedCosmetics);
+  const equippedCosmetics = useAppStore((state) => state.equippedCosmetics);
+  const setEquippedCosmetics = useAppStore((state) => state.setEquippedCosmetics);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [category, setCategory] = useState<CosmeticCategory>('head');
+  const [equippingId, setEquippingId] = useState<string | null>(null);
+  const ownedIds = useMemo(() => ownedCosmetics.map((item) => item.itemId), [ownedCosmetics]);
 
-const CustomizationModal = ({ visible, onClose }: { visible: boolean; onClose: () => void }) => {
-  const categories = ['Head', 'Shirt', 'Pants', 'Shoes'];
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+  }, []);
+
+  const currentEquipped = getEquippedId(equippedCosmetics, category);
+  const items = visibleCosmeticsForCategory(category);
+
+  const canUseItem = (item: CosmeticItem) =>
+    item.price === 0 || ownedIds.includes(item.id);
+
+  const equip = async (item: CosmeticItem) => {
+    if (!userId || !canUseItem(item)) return;
+    setEquippingId(item.id);
+    try {
+      setEquippedCosmetics(await equipCosmetic(userId, item.category, item.id));
+    } catch (caught) {
+      Alert.alert('Could not equip item', caught instanceof Error ? caught.message : 'Try again.');
+    } finally {
+      setEquippingId(null);
+    }
+  };
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalBackdrop}>
@@ -106,30 +125,77 @@ const CustomizationModal = ({ visible, onClose }: { visible: boolean; onClose: (
           <View style={styles.modalHeader}>
             <View>
               <AppText variant="caption" style={{ color: colors.primary }}>
-                Cosmetics
+                Equipment
               </AppText>
-              <AppText variant="title">Customization</AppText>
+              <AppText variant="title">Wardrobe</AppText>
             </View>
             <Pressable onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={22} color={colors.text} />
             </Pressable>
           </View>
-          {categories.map((category, index) => (
-            <View key={category} style={styles.cosmeticRow}>
-              <View>
-                <AppText variant="subtitle">{category}</AppText>
-                <AppText muted>{index === 0 ? 'Starter option unlocked' : 'More cosmetics locked'}</AppText>
-              </View>
-              <View style={[styles.lockPill, index === 0 && styles.unlockedPill]}>
-                <AppText style={styles.lockText}>{index === 0 ? 'Unlocked' : 'Locked'}</AppText>
-              </View>
-            </View>
-          ))}
-          <PrimaryButton label="Close" onPress={onClose} />
+
+          <View style={styles.modalPreview}>
+            <AvatarPreview equipment={equippedCosmetics} size="small" />
+          </View>
+
+          <View style={styles.categoryStrip}>
+            {COSMETIC_CATEGORIES.map((nextCategory) => (
+              <Pressable
+                key={nextCategory}
+                onPress={() => setCategory(nextCategory)}
+                style={[styles.categoryPill, category === nextCategory && styles.categoryPillActive]}
+              >
+                <AppText style={category === nextCategory && styles.categoryPillText}>
+                  {CATEGORY_LABELS[nextCategory]}
+                </AppText>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={styles.itemList}>
+            {items.map((item) => {
+              const owned = canUseItem(item);
+              const equipped = currentEquipped === item.id;
+              const levelLocked = (character?.level ?? 1) < (item.unlockLevel ?? 1);
+              return (
+                <View key={item.id} style={styles.cosmeticRow}>
+                  <CosmeticThumbnail item={item} compact />
+                  <View style={{ flex: 1 }}>
+                    <AppText variant="subtitle">{item.name}</AppText>
+                    <AppText muted>
+                      {equipped
+                        ? 'Equipped'
+                        : owned
+                          ? 'Owned'
+                          : levelLocked
+                            ? `Unlocks at Level ${item.unlockLevel}`
+                            : 'Buy in Shop'}
+                    </AppText>
+                  </View>
+                  <PrimaryButton
+                    label={equipped ? 'Equipped' : owned ? (equippingId === item.id ? 'Equipping...' : 'Equip') : 'Locked'}
+                    onPress={() => equip(item)}
+                    disabled={!owned || equipped || equippingId === item.id}
+                    variant={owned && !equipped ? 'primary' : 'secondary'}
+                    style={styles.equipButton}
+                  />
+                </View>
+              );
+            })}
+          </View>
         </View>
       </View>
     </Modal>
   );
+};
+
+const getEquippedId = (
+  equipment: ReturnType<typeof useAppStore.getState>['equippedCosmetics'],
+  category: CosmeticCategory
+) => {
+  if (!equipment) return null;
+  const key = `${category}ItemId` as keyof typeof equipment;
+  return equipment[key] as string | null;
 };
 
 const styles = StyleSheet.create({
@@ -171,7 +237,7 @@ const styles = StyleSheet.create({
     fontWeight: '900'
   },
   hero: {
-    minHeight: 276,
+    minHeight: 338,
     borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
@@ -192,121 +258,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
-    ...shadows.cyanGlow
+    zIndex: 10
   },
   levelBadgeText: {
     color: colors.black,
     fontWeight: '900'
-  },
-  avatarWrap: {
-    width: 170,
-    height: 210,
-    alignItems: 'center'
-  },
-  aura: {
-    position: 'absolute',
-    bottom: 10,
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: colors.secondarySoft
-  },
-  head: {
-    width: 54,
-    height: 54,
-    borderRadius: 16,
-    backgroundColor: '#F0C9A0',
-    borderWidth: 3,
-    borderColor: colors.primary,
-    marginTop: 20,
-    zIndex: 4
-  },
-  neck: {
-    width: 22,
-    height: 16,
-    backgroundColor: '#D6A77E',
-    zIndex: 3
-  },
-  body: {
-    width: 76,
-    height: 78,
-    borderRadius: 14,
-    backgroundColor: colors.cardSoft,
-    borderWidth: 3,
-    borderColor: colors.primary,
-    zIndex: 3,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  chestGlow: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.primarySoft,
-    borderWidth: 1,
-    borderColor: colors.primary
-  },
-  armLeft: {
-    position: 'absolute',
-    top: 96,
-    left: 30,
-    width: 28,
-    height: 82,
-    borderRadius: 10,
-    backgroundColor: colors.secondary,
-    borderWidth: 2,
-    borderColor: colors.primaryDim
-  },
-  armRight: {
-    position: 'absolute',
-    top: 96,
-    right: 30,
-    width: 28,
-    height: 82,
-    borderRadius: 10,
-    backgroundColor: colors.secondary,
-    borderWidth: 2,
-    borderColor: colors.primaryDim
-  },
-  legLeft: {
-    position: 'absolute',
-    bottom: 24,
-    left: 58,
-    width: 26,
-    height: 72,
-    borderRadius: 10,
-    backgroundColor: '#172A4A',
-    borderWidth: 2,
-    borderColor: colors.borderDim
-  },
-  legRight: {
-    position: 'absolute',
-    bottom: 24,
-    right: 58,
-    width: 26,
-    height: 72,
-    borderRadius: 10,
-    backgroundColor: '#172A4A',
-    borderWidth: 2,
-    borderColor: colors.borderDim
-  },
-  shoeLeft: {
-    position: 'absolute',
-    bottom: 8,
-    left: 50,
-    width: 38,
-    height: 18,
-    borderRadius: 8,
-    backgroundColor: colors.primary
-  },
-  shoeRight: {
-    position: 'absolute',
-    bottom: 8,
-    right: 50,
-    width: 38,
-    height: 18,
-    borderRadius: 8,
-    backgroundColor: colors.primary
   },
   statsGrid: {
     flexDirection: 'row',
@@ -329,6 +285,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end'
   },
   modalCard: {
+    maxHeight: '92%',
     backgroundColor: colors.card,
     borderTopLeftRadius: radii.lg,
     borderTopRightRadius: radii.lg,
@@ -352,31 +309,54 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderDim
   },
+  modalPreview: {
+    height: 190,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.black,
+    overflow: 'hidden'
+  },
+  categoryStrip: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs
+  },
+  categoryPill: {
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.cardHigh,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs
+  },
+  categoryPillActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft
+  },
+  categoryPillText: {
+    color: colors.primary,
+    fontWeight: '900'
+  },
+  itemList: {
+    gap: spacing.sm
+  },
   cosmeticRow: {
-    minHeight: 74,
+    minHeight: 94,
     borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.borderDim,
     backgroundColor: colors.cardHigh,
-    padding: spacing.md,
+    padding: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md
+    gap: spacing.sm
   },
-  lockPill: {
-    borderRadius: radii.pill,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    backgroundColor: colors.secondarySoft,
-    borderWidth: 1,
-    borderColor: colors.secondary
-  },
-  unlockedPill: {
-    backgroundColor: colors.primarySoft,
-    borderColor: colors.primary
-  },
-  lockText: {
-    fontWeight: '800'
+  equipButton: {
+    minWidth: 98,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm
   }
 });

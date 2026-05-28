@@ -17,6 +17,7 @@ export const mapCharacter = (row: {
   user_id: string;
   level: number;
   total_exp: number;
+  coins: number;
   endurance_exp: number;
   speed_exp: number;
   strength_exp: number;
@@ -27,6 +28,7 @@ export const mapCharacter = (row: {
   userId: row.user_id,
   level: row.level,
   totalExp: row.total_exp,
+  coins: row.coins,
   enduranceExp: row.endurance_exp,
   speedExp: row.speed_exp,
   strengthExp: row.strength_exp,

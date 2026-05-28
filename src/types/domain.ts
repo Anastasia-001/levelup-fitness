@@ -5,6 +5,7 @@ export type ManualActivityType = 'gym_workout' | 'pushups' | 'swimming' | 'other
 export type ActivityType = GpsActivityType | ManualActivityType;
 
 export type UnitPreference = 'metric' | 'imperial';
+export type CosmeticCategory = 'head' | 'shirt' | 'pants' | 'shoes' | 'accessory' | 'frame';
 
 export type RoutePoint = {
   latitude: number;
@@ -38,10 +39,43 @@ export type Character = {
   userId: string;
   level: number;
   totalExp: number;
+  coins: number;
   enduranceExp: number;
   speedExp: number;
   strengthExp: number;
   consistencyExp: number;
+  updatedAt: string;
+};
+
+export type CosmeticItem = {
+  id: string;
+  name: string;
+  category: CosmeticCategory;
+  shopSection: 'Featured' | 'Outfits' | 'Shoes' | 'Accessories';
+  price: number;
+  unlockLevel?: number;
+  colors: {
+    primary: string;
+    secondary: string;
+    accent?: string;
+  };
+  description: string;
+};
+
+export type OwnedCosmetic = {
+  userId: string;
+  itemId: string;
+  acquiredAt: string;
+};
+
+export type EquippedCosmetics = {
+  userId: string;
+  headItemId: string | null;
+  shirtItemId: string | null;
+  pantsItemId: string | null;
+  shoesItemId: string | null;
+  accessoryItemId: string | null;
+  frameItemId: string | null;
   updatedAt: string;
 };
 
@@ -99,6 +133,7 @@ export type Database = {
           user_id: string;
           level: number;
           total_exp: number;
+          coins: number;
           endurance_exp: number;
           speed_exp: number;
           strength_exp: number;
@@ -109,6 +144,7 @@ export type Database = {
           user_id: string;
           level?: number;
           total_exp?: number;
+          coins?: number;
           endurance_exp?: number;
           speed_exp?: number;
           strength_exp?: number;
@@ -118,6 +154,7 @@ export type Database = {
           user_id?: string;
           level?: number;
           total_exp?: number;
+          coins?: number;
           endurance_exp?: number;
           speed_exp?: number;
           strength_exp?: number;
@@ -199,6 +236,52 @@ export type Database = {
           progress?: number;
           reward_exp?: number;
           completed_at?: string | null;
+        };
+        Relationships: [];
+      };
+      owned_cosmetics: {
+        Row: {
+          user_id: string;
+          item_id: string;
+          acquired_at: string;
+        };
+        Insert: {
+          user_id: string;
+          item_id: string;
+          acquired_at?: string;
+        };
+        Update: {
+          item_id?: string;
+        };
+        Relationships: [];
+      };
+      equipped_cosmetics: {
+        Row: {
+          user_id: string;
+          head_item_id: string | null;
+          shirt_item_id: string | null;
+          pants_item_id: string | null;
+          shoes_item_id: string | null;
+          accessory_item_id: string | null;
+          frame_item_id: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          head_item_id?: string | null;
+          shirt_item_id?: string | null;
+          pants_item_id?: string | null;
+          shoes_item_id?: string | null;
+          accessory_item_id?: string | null;
+          frame_item_id?: string | null;
+        };
+        Update: {
+          head_item_id?: string | null;
+          shirt_item_id?: string | null;
+          pants_item_id?: string | null;
+          shoes_item_id?: string | null;
+          accessory_item_id?: string | null;
+          frame_item_id?: string | null;
         };
         Relationships: [];
       };

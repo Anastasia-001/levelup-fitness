@@ -30,6 +30,7 @@ create table public.characters (
   user_id uuid not null unique references auth.users(id) on delete cascade,
   level integer not null default 1 check (level > 0),
   total_exp integer not null default 0 check (total_exp >= 0),
+  coins integer not null default 120 check (coins >= 0),
   endurance_exp integer not null default 0 check (endurance_exp >= 0),
   speed_exp integer not null default 0 check (speed_exp >= 0),
   strength_exp integer not null default 0 check (strength_exp >= 0),
@@ -66,6 +67,24 @@ create table public.missions (
   unique (user_id, mission_date, type)
 );
 
+create table public.owned_cosmetics (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  item_id text not null,
+  acquired_at timestamptz not null default now(),
+  primary key (user_id, item_id)
+);
+
+create table public.equipped_cosmetics (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  head_item_id text,
+  shirt_item_id text,
+  pants_item_id text,
+  shoes_item_id text,
+  accessory_item_id text,
+  frame_item_id text,
+  updated_at timestamptz not null default now()
+);
+
 create index activities_user_completed_idx on public.activities (user_id, completed_at desc);
 create index missions_user_date_idx on public.missions (user_id, mission_date);
 
@@ -73,6 +92,8 @@ alter table public.profiles enable row level security;
 alter table public.characters enable row level security;
 alter table public.activities enable row level security;
 alter table public.missions enable row level security;
+alter table public.owned_cosmetics enable row level security;
+alter table public.equipped_cosmetics enable row level security;
 
 create policy "Profiles are owned by users"
   on public.profiles for all
@@ -94,6 +115,16 @@ create policy "Missions are owned by users"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+create policy "Owned cosmetics are owned by users"
+  on public.owned_cosmetics for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "Equipped cosmetics are owned by users"
+  on public.equipped_cosmetics for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
 create or replace function public.touch_character_updated_at()
 returns trigger
 language plpgsql
@@ -106,4 +137,8 @@ $$;
 
 create trigger characters_touch_updated_at
 before update on public.characters
+for each row execute function public.touch_character_updated_at();
+
+create trigger equipped_cosmetics_touch_updated_at
+before update on public.equipped_cosmetics
 for each row execute function public.touch_character_updated_at();

@@ -73,6 +73,7 @@ export const applyExpToCharacter = (
     ...character,
     level,
     totalExp,
+    coins: character.coins + expEarned,
     enduranceExp: character.enduranceExp + statExp.endurance,
     speedExp: character.speedExp + statExp.speed,
     strengthExp: character.strengthExp + statExp.strength,

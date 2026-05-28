@@ -1,46 +1,58 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { Card } from '@/components/Card';
+import { CosmeticThumbnail } from '@/components/CosmeticThumbnail';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { Screen } from '@/components/Screen';
-import { colors, radii, shadows, spacing } from '@/constants/theme';
+import { SHOP_COSMETICS } from '@/constants/cosmetics';
+import { colors, radii, spacing } from '@/constants/theme';
+import { supabase } from '@/lib/supabase';
+import { purchaseCosmetic } from '@/services/cosmeticService';
 import { useAppStore } from '@/store/appStore';
+import { CosmeticItem } from '@/types/domain';
 
-type ShopItem = {
-  name: string;
-  type: string;
-  price: number;
-  section: 'Featured' | 'Outfits' | 'Shoes' | 'Accessories';
-};
-
-const shopItems: ShopItem[] = [
-  { name: 'Neon Runner Shirt', type: 'Shirt', price: 250, section: 'Featured' },
-  { name: 'Shadow Training Pants', type: 'Pants', price: 300, section: 'Outfits' },
-  { name: 'Starter Sneakers', type: 'Shoes', price: 150, section: 'Shoes' },
-  { name: 'Cyan Headband', type: 'Head', price: 100, section: 'Accessories' },
-  { name: 'Purple Aura Frame', type: 'Frame', price: 500, section: 'Featured' }
-];
-
-const sections: ShopItem['section'][] = ['Featured', 'Outfits', 'Shoes', 'Accessories'];
+const sections: CosmeticItem['shopSection'][] = ['Featured', 'Outfits', 'Shoes', 'Accessories'];
 
 export default function ShopScreen() {
-  const totalExp = useAppStore((state) => state.character?.totalExp ?? 0);
-  const [owned, setOwned] = useState<string[]>([]);
-  const coins = Math.floor(totalExp / 5) + 120;
+  const character = useAppStore((state) => state.character);
+  const ownedCosmetics = useAppStore((state) => state.ownedCosmetics);
+  const setCharacter = useAppStore((state) => state.setCharacter);
+  const addOwnedCosmetic = useAppStore((state) => state.addOwnedCosmetic);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [purchasingId, setPurchasingId] = useState<string | null>(null);
+  const ownedIds = ownedCosmetics.map((item) => item.itemId);
+  const coins = character?.coins ?? 0;
+  const level = character?.level ?? 1;
   const grouped = useMemo(
-    () => sections.map((section) => ({ section, items: shopItems.filter((item) => item.section === section) })),
+    () => sections.map((section) => ({ section, items: SHOP_COSMETICS.filter((item) => item.shopSection === section) })),
     []
   );
 
-  const buy = (item: ShopItem) => {
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+  }, []);
+
+  const buy = async (item: CosmeticItem) => {
+    if (!userId || !character) return;
+    if (ownedIds.includes(item.id)) return;
     if (coins < item.price) {
-      Alert.alert('Not enough coins', 'Keep completing physical activities and daily quests to earn more.');
+      Alert.alert('Not enough coins', 'Complete activities and daily quests to earn more coins.');
       return;
     }
-    setOwned((current) => [...current, item.name]);
-    Alert.alert('Item unlocked', `${item.name} is ready in customization.`);
+
+    setPurchasingId(item.id);
+    try {
+      const result = await purchaseCosmetic(userId, item, coins);
+      setCharacter({ ...character, coins: result.coins });
+      addOwnedCosmetic(result.ownedCosmetic);
+      Alert.alert('Item unlocked', `${item.name} is now available in your wardrobe.`);
+    } catch (caught) {
+      Alert.alert('Purchase failed', caught instanceof Error ? caught.message : 'Try again.');
+    } finally {
+      setPurchasingId(null);
+    }
   };
 
   return (
@@ -63,24 +75,40 @@ export default function ShopScreen() {
           <AppText variant="subtitle">{section}</AppText>
           <View style={styles.grid}>
             {items.map((item) => {
-              const isOwned = owned.includes(item.name);
-              const canBuy = coins >= item.price && !isOwned;
+              const isOwned = ownedIds.includes(item.id);
+              const levelLocked = level < (item.unlockLevel ?? 1);
+              const canBuy = coins >= item.price && !isOwned && !levelLocked;
               return (
-                <Card key={item.name}>
-                  <View style={styles.preview}>
-                    <View style={styles.pixelBody} />
-                    <View style={styles.pixelGlow} />
+                <Card key={item.id}>
+                  <CosmeticThumbnail item={item} />
+                  <View style={styles.itemHeader}>
+                    <View style={{ flex: 1 }}>
+                      <AppText variant="subtitle">{item.name}</AppText>
+                      <AppText muted>{item.category.toUpperCase()}</AppText>
+                    </View>
+                    {isOwned && <StatusPill label="Owned" color={colors.success} />}
+                    {levelLocked && <StatusPill label={`Lv ${item.unlockLevel}`} color={colors.secondary} />}
                   </View>
-                  <AppText variant="subtitle">{item.name}</AppText>
-                  <AppText muted>{item.type}</AppText>
+                  <AppText muted>{item.description}</AppText>
                   <View style={styles.priceRow}>
                     <Ionicons name="diamond" size={14} color={colors.coin} />
                     <AppText style={styles.price}>{item.price}</AppText>
+                    {!isOwned && !levelLocked && coins < item.price && <AppText muted>Not enough coins</AppText>}
                   </View>
                   <PrimaryButton
-                    label={isOwned ? 'Owned' : canBuy ? 'Buy' : 'Not enough coins'}
+                    label={
+                      isOwned
+                        ? 'Owned'
+                        : levelLocked
+                          ? `Unlocks at Level ${item.unlockLevel}`
+                          : canBuy
+                            ? purchasingId === item.id
+                              ? 'Buying...'
+                              : 'Buy'
+                            : 'Not enough coins'
+                    }
                     onPress={() => buy(item)}
-                    disabled={!canBuy}
+                    disabled={!canBuy || purchasingId === item.id}
                     variant={canBuy ? 'primary' : 'secondary'}
                   />
                 </Card>
@@ -92,6 +120,12 @@ export default function ShopScreen() {
     </Screen>
   );
 }
+
+const StatusPill = ({ label, color }: { label: string; color: string }) => (
+  <View style={[styles.statusPill, { borderColor: color }]}>
+    <AppText style={[styles.statusText, { color }]}>{label}</AppText>
+  </View>
+);
 
 const styles = StyleSheet.create({
   header: {
@@ -124,31 +158,10 @@ const styles = StyleSheet.create({
   grid: {
     gap: spacing.md
   },
-  preview: {
-    height: 116,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.black,
+  itemHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden'
-  },
-  pixelBody: {
-    width: 58,
-    height: 74,
-    borderRadius: radii.sm,
-    backgroundColor: colors.secondary,
-    borderWidth: 3,
-    borderColor: colors.primary,
-    ...shadows.cyanGlow
-  },
-  pixelGlow: {
-    position: 'absolute',
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    backgroundColor: colors.secondarySoft
+    gap: spacing.sm
   },
   priceRow: {
     flexDirection: 'row',
@@ -157,6 +170,16 @@ const styles = StyleSheet.create({
   },
   price: {
     color: colors.coin,
+    fontWeight: '900'
+  },
+  statusPill: {
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.cardHigh
+  },
+  statusText: {
     fontWeight: '900'
   }
 });

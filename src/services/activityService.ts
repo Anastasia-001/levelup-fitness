@@ -12,6 +12,7 @@ const persistCharacter = async (character: Character) => {
     .update({
       level: character.level,
       total_exp: character.totalExp,
+      coins: character.coins,
       endurance_exp: character.enduranceExp,
       speed_exp: character.speedExp,
       strength_exp: character.strengthExp,
@@ -82,6 +83,7 @@ const applyMissionBonus = (character: Character, bonusExp: number): Character =>
     ...character,
     level: levelFromTotalExp(totalExp).level,
     totalExp,
+    coins: character.coins + bonusExp,
     consistencyExp: character.consistencyExp + Math.round(bonusExp * 0.35),
     updatedAt: new Date().toISOString()
   };

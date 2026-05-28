@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { ensureEquipment } from '@/services/cosmeticService';
 import { UnitPreference } from '@/types/domain';
 import { mapCharacter, mapProfile } from '@/services/mappers';
 
@@ -33,9 +34,11 @@ export const ensureProfileAndCharacter = async (userId: string, fallbackUsername
   }
 
   if (!existingCharacter) {
-    const { error } = await supabase.from('characters').insert({ user_id: userId });
+    const { error } = await supabase.from('characters').insert({ user_id: userId, coins: 120 });
     if (error) throw error;
   }
+
+  await ensureEquipment(userId);
 };
 
 export const getProfile = async (userId: string) => {
