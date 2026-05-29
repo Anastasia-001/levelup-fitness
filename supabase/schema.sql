@@ -21,7 +21,12 @@ create type public.mission_type as enum (
 create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   username text not null check (char_length(username) between 2 and 32),
+  location text,
   unit_preference public.unit_preference not null default 'metric',
+  privacy_controls_enabled boolean not null default true,
+  health_data_enabled boolean not null default false,
+  email_notifications_enabled boolean not null default true,
+  push_notifications_enabled boolean not null default true,
   created_at timestamptz not null default now()
 );
 
@@ -50,6 +55,8 @@ create table public.activities (
   sets integer,
   reps integer,
   weight_kg numeric,
+  photo_url text,
+  photo_path text,
   exp_earned integer not null check (exp_earned >= 0),
   stat_exp jsonb not null default '{"endurance":0,"speed":0,"strength":0,"consistency":0}'::jsonb
 );
@@ -124,6 +131,32 @@ create policy "Equipped cosmetics are owned by users"
   on public.equipped_cosmetics for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+insert into storage.buckets (id, name, public)
+values ('activity-photos', 'activity-photos', true)
+on conflict (id) do nothing;
+
+create policy "Activity photos are readable"
+  on storage.objects for select
+  using (bucket_id = 'activity-photos');
+
+create policy "Users can upload their activity photos"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'activity-photos'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+create policy "Users can update their activity photos"
+  on storage.objects for update
+  using (
+    bucket_id = 'activity-photos'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  )
+  with check (
+    bucket_id = 'activity-photos'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
 
 create or replace function public.touch_character_updated_at()
 returns trigger

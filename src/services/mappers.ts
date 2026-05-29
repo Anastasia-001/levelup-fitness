@@ -3,12 +3,22 @@ import { Activity, Character, Mission, Profile } from '@/types/domain';
 export const mapProfile = (row: {
   id: string;
   username: string;
+  location: string | null;
   unit_preference: Profile['unitPreference'];
+  privacy_controls_enabled: boolean;
+  health_data_enabled: boolean;
+  email_notifications_enabled: boolean;
+  push_notifications_enabled: boolean;
   created_at: string;
 }): Profile => ({
   id: row.id,
   username: row.username,
+  location: row.location,
   unitPreference: row.unit_preference,
+  privacyControlsEnabled: row.privacy_controls_enabled,
+  healthDataEnabled: row.health_data_enabled,
+  emailNotificationsEnabled: row.email_notifications_enabled,
+  pushNotificationsEnabled: row.push_notifications_enabled,
   createdAt: row.created_at
 });
 
@@ -48,6 +58,8 @@ export const mapActivity = (row: {
   sets: number | null;
   reps: number | null;
   weight_kg: number | null;
+  photo_url: string | null;
+  photo_path: string | null;
   exp_earned: number;
   stat_exp: Activity['statExp'];
 }): Activity => ({
@@ -62,6 +74,8 @@ export const mapActivity = (row: {
   sets: row.sets ?? undefined,
   reps: row.reps ?? undefined,
   weightKg: row.weight_kg ?? undefined,
+  photoUrl: row.photo_url ?? undefined,
+  photoPath: row.photo_path ?? undefined,
   expEarned: row.exp_earned,
   statExp: row.stat_exp
 });

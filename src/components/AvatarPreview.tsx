@@ -16,10 +16,17 @@ export const AvatarPreview = ({ equipment, size = 'large' }: AvatarPreviewProps)
     <View style={[styles.wrap, { transform: [{ scale }] }]}>
       <FrameGlow item={equipped.frame} />
       <View style={styles.aura} />
+      <View style={styles.motionLineLeft} />
+      <View style={styles.motionLineRight} />
       <View style={styles.hairBack} />
       <View style={styles.head}>
+        <View style={styles.fringe} />
+        <View style={styles.sideLockLeft} />
+        <View style={styles.sideLockRight} />
         <View style={styles.eyeLeft} />
         <View style={styles.eyeRight} />
+        <View style={styles.cheekLeft} />
+        <View style={styles.cheekRight} />
         <View style={styles.smile} />
       </View>
       <Headband item={equipped.head} />
@@ -52,68 +59,140 @@ const FrameGlow = ({ item }: { item: CosmeticItem | null }) =>
 
 const styles = StyleSheet.create({
   wrap: {
-    width: 210,
-    height: 300,
+    width: 230,
+    height: 330,
     alignItems: 'center'
   },
   frameGlow: {
     position: 'absolute',
-    top: 24,
-    width: 190,
-    height: 240,
-    borderRadius: 44,
+    top: 30,
+    width: 208,
+    height: 260,
+    borderRadius: 58,
     borderWidth: 3,
     opacity: 0.42,
     ...shadows.purpleGlow
   },
   aura: {
     position: 'absolute',
-    top: 42,
-    width: 170,
-    height: 220,
-    borderRadius: 60,
+    top: 44,
+    width: 188,
+    height: 250,
+    borderRadius: 74,
     backgroundColor: colors.secondarySoft
+  },
+  motionLineLeft: {
+    position: 'absolute',
+    top: 72,
+    left: 26,
+    width: 4,
+    height: 112,
+    borderRadius: 4,
+    backgroundColor: 'rgba(53, 246, 255, 0.18)',
+    transform: [{ rotate: '18deg' }]
+  },
+  motionLineRight: {
+    position: 'absolute',
+    top: 92,
+    right: 28,
+    width: 4,
+    height: 128,
+    borderRadius: 4,
+    backgroundColor: 'rgba(143, 92, 255, 0.24)',
+    transform: [{ rotate: '-15deg' }]
   },
   hairBack: {
     position: 'absolute',
-    top: 24,
-    width: 78,
-    height: 76,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18,
+    top: 26,
+    width: 92,
+    height: 92,
+    borderTopLeftRadius: 42,
+    borderTopRightRadius: 42,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
     backgroundColor: '#17213B',
     zIndex: 3
   },
   head: {
-    width: 64,
-    height: 70,
-    borderRadius: 26,
+    width: 70,
+    height: 76,
+    borderRadius: 30,
     backgroundColor: '#F3CBA9',
     borderWidth: 2,
     borderColor: '#FFE2C7',
-    marginTop: 36,
+    marginTop: 42,
     zIndex: 5,
     alignItems: 'center'
   },
+  fringe: {
+    position: 'absolute',
+    top: -8,
+    width: 72,
+    height: 28,
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    borderBottomLeftRadius: 14,
+    borderBottomRightRadius: 20,
+    backgroundColor: '#17213B',
+    zIndex: 7
+  },
+  sideLockLeft: {
+    position: 'absolute',
+    top: 8,
+    left: -8,
+    width: 18,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#17213B',
+    transform: [{ rotate: '10deg' }],
+    zIndex: 6
+  },
+  sideLockRight: {
+    position: 'absolute',
+    top: 7,
+    right: -8,
+    width: 18,
+    height: 50,
+    borderRadius: 12,
+    backgroundColor: '#17213B',
+    transform: [{ rotate: '-10deg' }],
+    zIndex: 6
+  },
   eyeLeft: {
     position: 'absolute',
-    top: 28,
-    left: 17,
-    width: 7,
-    height: 10,
+    top: 31,
+    left: 18,
+    width: 8,
+    height: 12,
     borderRadius: 4,
     backgroundColor: '#0A1428'
   },
   eyeRight: {
     position: 'absolute',
-    top: 28,
-    right: 17,
-    width: 7,
-    height: 10,
+    top: 31,
+    right: 18,
+    width: 8,
+    height: 12,
     borderRadius: 4,
     backgroundColor: '#0A1428'
+  },
+  cheekLeft: {
+    position: 'absolute',
+    top: 45,
+    left: 12,
+    width: 10,
+    height: 4,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255, 92, 138, 0.34)'
+  },
+  cheekRight: {
+    position: 'absolute',
+    top: 45,
+    right: 12,
+    width: 10,
+    height: 4,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255, 92, 138, 0.34)'
   },
   smile: {
     position: 'absolute',
@@ -126,39 +205,39 @@ const styles = StyleSheet.create({
   },
   headband: {
     position: 'absolute',
-    top: 48,
-    width: 74,
+    top: 55,
+    width: 82,
     height: 10,
     borderRadius: 8,
     zIndex: 6,
     ...shadows.cyanGlow
   },
   neck: {
-    width: 24,
-    height: 16,
+    width: 26,
+    height: 18,
     backgroundColor: '#D6A77E',
     zIndex: 4
   },
   torso: {
-    width: 88,
-    height: 86,
-    borderRadius: 22,
+    width: 98,
+    height: 96,
+    borderRadius: 28,
     borderWidth: 3,
     zIndex: 4,
     alignItems: 'center',
     justifyContent: 'center'
   },
   torsoPanel: {
-    width: 42,
-    height: 42,
-    borderRadius: 16,
+    width: 48,
+    height: 54,
+    borderRadius: 18,
     opacity: 0.88
   },
   arm: {
     position: 'absolute',
-    top: 120,
-    width: 32,
-    height: 94,
+    top: 135,
+    width: 34,
+    height: 102,
     borderRadius: 18,
     backgroundColor: '#F3CBA9',
     borderWidth: 2,
@@ -166,16 +245,16 @@ const styles = StyleSheet.create({
     zIndex: 2
   },
   armLeft: {
-    left: 40,
+    left: 42,
     transform: [{ rotate: '7deg' }]
   },
   armRight: {
-    right: 40,
+    right: 42,
     transform: [{ rotate: '-7deg' }]
   },
   waist: {
-    width: 72,
-    height: 16,
+    width: 78,
+    height: 18,
     backgroundColor: colors.primaryDim,
     borderRadius: 8,
     zIndex: 5
@@ -186,9 +265,9 @@ const styles = StyleSheet.create({
     zIndex: 3
   },
   leg: {
-    width: 34,
-    height: 82,
-    borderRadius: 14,
+    width: 36,
+    height: 92,
+    borderRadius: 15,
     borderWidth: 2
   },
   shoes: {
@@ -197,17 +276,18 @@ const styles = StyleSheet.create({
     zIndex: 5
   },
   shoe: {
-    width: 48,
-    height: 20,
+    width: 52,
+    height: 22,
     borderRadius: radii.pill,
     borderWidth: 2
   },
   accessory: {
     position: 'absolute',
-    top: 102,
+    top: 112,
     right: 42,
-    width: 18,
-    height: 18,
-    borderRadius: 9
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    ...shadows.cyanGlow
   }
 });

@@ -6,16 +6,28 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "assetBundlePatterns": ["**/*"],
-    "plugins": ["expo-router", "expo-location"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "plugins": [
+      "expo-router",
+      "expo-location",
+      "expo-font",
+      "expo-image-picker"
+    ],
     "ios": {
       "supportsTablet": false,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "LevelUp Fitness uses location to record GPS workouts and calculate distance."
+        "NSLocationWhenInUseUsageDescription": "LevelUp Fitness uses location to record GPS workouts and calculate distance.",
+        "NSCameraUsageDescription": "LevelUp Fitness lets you attach a photo to a completed activity.",
+        "NSPhotoLibraryUsageDescription": "LevelUp Fitness lets you choose a photo for a completed activity."
       }
     },
     "android": {
-      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
     },
     "extra": {
       "router": {

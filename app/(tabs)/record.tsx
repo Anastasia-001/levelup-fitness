@@ -1,31 +1,37 @@
+import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { useEffect, useRef, useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
-import { ActivityHistoryList } from '@/components/ActivityHistoryList';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/AppText';
-import { Card } from '@/components/Card';
 import { FitnessMap } from '@/components/FitnessMap';
-import { MetricTile } from '@/components/MetricTile';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { Screen } from '@/components/Screen';
 import { TextField } from '@/components/TextField';
 import { ACTIVITY_LABELS, GPS_ACTIVITY_TYPES, MANUAL_ACTIVITY_TYPES, isGpsActivity } from '@/constants/activities';
-import { colors, radii, spacing } from '@/constants/theme';
+import { colors, radii, shadows, spacing } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
-import { saveActivity } from '@/services/activityService';
+import { saveActivity, uploadActivityPhoto } from '@/services/activityService';
 import { getTodayMissions } from '@/services/missionService';
 import { ensureProfileAndCharacter } from '@/services/profileService';
 import { useAppStore } from '@/store/appStore';
-import { ActivityType, RoutePoint } from '@/types/domain';
+import { Activity, ActivityType, RoutePoint } from '@/types/domain';
 import { formatDistance, formatDuration, formatPace } from '@/utils/format';
 import { distanceBetweenMeters } from '@/utils/geo';
 
 type RecordingState = 'idle' | 'recording' | 'paused';
 
+const sportGroups = [
+  { title: 'GPS sports', items: GPS_ACTIVITY_TYPES },
+  { title: 'Manual workouts', items: MANUAL_ACTIVITY_TYPES }
+] as const;
+
 export default function RecordScreen() {
   const [userId, setUserId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<ActivityType>('run');
-  const [mode, setMode] = useState<'record' | 'history'>('record');
+  const [sportModalVisible, setSportModalVisible] = useState(false);
+  const [sportSearch, setSportSearch] = useState('');
+  const [manualModalVisible, setManualModalVisible] = useState(false);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [distanceMeters, setDistanceMeters] = useState(0);
@@ -36,13 +42,24 @@ export default function RecordScreen() {
   const [reps, setReps] = useState('');
   const [weightKg, setWeightKg] = useState('');
   const [saving, setSaving] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [savedActivity, setSavedActivity] = useState<Activity | null>(null);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
   const recordingStateRef = useRef<RecordingState>('idle');
   const addActivity = useAppStore((state) => state.addActivity);
+  const updateActivity = useAppStore((state) => state.updateActivity);
   const setCharacter = useAppStore((state) => state.setCharacter);
   const setMissions = useAppStore((state) => state.setMissions);
   const units = useAppStore((state) => state.profile?.unitPreference ?? 'metric');
-  const activities = useAppStore((state) => state.activities);
+  const selectedIsGps = isGpsActivity(selectedType);
+
+  const visibleSportGroups = useMemo(() => {
+    const query = sportSearch.trim().toLowerCase();
+    return sportGroups.map((group) => ({
+      ...group,
+      items: group.items.filter((type) => ACTIVITY_LABELS[type].toLowerCase().includes(query))
+    }));
+  }, [sportSearch]);
 
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data }) => {
@@ -65,15 +82,12 @@ export default function RecordScreen() {
   }, [recordingState]);
 
   useEffect(() => {
-    if (recordingState !== 'recording') {
-      return;
-    }
+    if (recordingState !== 'recording') return;
 
     const timer = setInterval(() => setElapsedSeconds((current) => current + 1), 1000);
     return () => clearInterval(timer);
   }, [recordingState]);
 
-  const selectedIsGps = isGpsActivity(selectedType);
   const startGps = async () => {
     const permission = await Location.requestForegroundPermissionsAsync();
     if (permission.status !== 'granted') {
@@ -94,9 +108,7 @@ export default function RecordScreen() {
         timeInterval: 3000
       },
       (location) => {
-        if (recordingStateRef.current !== 'recording') {
-          return;
-        }
+        if (recordingStateRef.current !== 'recording') return;
 
         const point: RoutePoint = {
           latitude: location.coords.latitude,
@@ -117,9 +129,6 @@ export default function RecordScreen() {
       }
     );
   };
-
-  const pauseGps = () => setRecordingState('paused');
-  const resumeGps = () => setRecordingState('recording');
 
   const stopGps = async () => {
     if (!userId) return;
@@ -146,6 +155,7 @@ export default function RecordScreen() {
     setSets('');
     setReps('');
     setWeightKg('');
+    setManualModalVisible(false);
   };
 
   const saveWorkout = async (input: Parameters<typeof saveActivity>[1]) => {
@@ -156,7 +166,7 @@ export default function RecordScreen() {
       addActivity(result.activity);
       setCharacter(result.character);
       setMissions(result.missions.length ? result.missions : await getTodayMissions(userId));
-      Alert.alert('Activity saved', `Earned ${result.expEarned} EXP${result.bonusExp ? ` including ${result.bonusExp} mission bonus` : ''}.`);
+      setSavedActivity(result.activity);
     } catch (caught) {
       Alert.alert('Could not save activity', caught instanceof Error ? caught.message : 'Try again.');
     } finally {
@@ -164,175 +174,509 @@ export default function RecordScreen() {
     }
   };
 
-  return (
-    <Screen scroll={mode === 'history' || !selectedIsGps}>
-      <View>
-        <AppText variant="caption" style={{ color: colors.primary }}>
-          Record
-        </AppText>
-        <AppText variant="title">{mode === 'record' ? 'Choose your activity' : 'Activity history'}</AppText>
-      </View>
+  const addPhoto = async (source: 'camera' | 'library') => {
+    if (!userId || !savedActivity) return;
+    const permission =
+      source === 'camera'
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-      <View style={styles.segment}>
-        {(['record', 'history'] as const).map((nextMode) => (
+    if (permission.status !== 'granted') {
+      Alert.alert('Photo permission needed', 'Allow photo access to attach an image to this activity.');
+      return;
+    }
+
+    const result =
+      source === 'camera'
+        ? await ImagePicker.launchCameraAsync({ allowsEditing: true, quality: 0.82 })
+        : await ImagePicker.launchImageLibraryAsync({
+            allowsEditing: true,
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            quality: 0.82
+          });
+
+    if (result.canceled || !result.assets[0]?.uri) return;
+
+    setPhotoUploading(true);
+    try {
+      const updated = await uploadActivityPhoto(userId, savedActivity.id, result.assets[0].uri);
+      updateActivity(updated);
+      setSavedActivity(updated);
+    } catch (caught) {
+      Alert.alert('Photo upload failed', caught instanceof Error ? caught.message : 'Try again.');
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
+  const closePostActivity = () => {
+    setSavedActivity(null);
+    setElapsedSeconds(0);
+    setDistanceMeters(0);
+    setRoute([]);
+    setCurrentPoint(null);
+  };
+
+  return (
+    <Screen scroll={false}>
+      <View style={styles.shell}>
+        <View style={styles.mapArea}>
+          <FitnessMap route={route} currentPoint={currentPoint} />
+          <View style={styles.topOverlay}>
+            <StatPill label="Time" value={formatDuration(elapsedSeconds)} />
+            <StatPill label="Distance" value={formatDistance(distanceMeters, units)} />
+            <StatPill label="Avg Pace" value={formatPace(elapsedSeconds, distanceMeters, units)} />
+          </View>
+          <View style={styles.sportBadge}>
+            <Ionicons name={selectedIsGps ? 'navigate' : 'barbell'} size={16} color={colors.primary} />
+            <AppText style={styles.sportBadgeText}>{ACTIVITY_LABELS[selectedType]}</AppText>
+          </View>
+        </View>
+
+        <View style={styles.bottomControls}>
           <Pressable
-            key={nextMode}
-            onPress={() => recordingState === 'idle' && setMode(nextMode)}
-            style={[styles.segmentItem, mode === nextMode && styles.segmentActive]}
+            onPress={() => recordingState === 'idle' && setSportModalVisible(true)}
+            disabled={recordingState !== 'idle'}
+            style={({ pressed }) => [styles.sportButton, pressed && styles.pressed, recordingState !== 'idle' && styles.disabled]}
           >
-            <AppText style={mode === nextMode && styles.segmentText}>
-              {nextMode === 'record' ? 'Record' : 'History'}
+            <Ionicons name={selectedIsGps ? 'walk' : 'fitness'} size={22} color={colors.primary} />
+            <AppText variant="caption" style={styles.sportButtonText}>
+              {ACTIVITY_LABELS[selectedType]}
             </AppText>
           </Pressable>
-        ))}
-      </View>
 
-      {mode === 'history' ? (
-        <ActivityHistoryList activities={activities} units={units} />
-      ) : (
-        <>
-          {recordingState === 'idle' && (
-            <View style={styles.optionsGrid}>
-              {[...GPS_ACTIVITY_TYPES, ...MANUAL_ACTIVITY_TYPES].map((type) => (
-                <Pressable
-                  key={type}
-                  onPress={() => setSelectedType(type)}
-                  style={[styles.option, selectedType === type && styles.optionActive]}
-                >
-                  <AppText style={selectedType === type && styles.optionTextActive}>{ACTIVITY_LABELS[type]}</AppText>
-                </Pressable>
-              ))}
-            </View>
-          )}
-
-          {selectedIsGps ? (
-            <View style={styles.gpsLayout}>
-              <View style={styles.metricsRow}>
-                <MetricTile label="Time" value={formatDuration(elapsedSeconds)} />
-                <MetricTile label="Distance" value={formatDistance(distanceMeters, units)} />
-              </View>
-              <View style={styles.metricsRow}>
-                <MetricTile label="Avg pace" value={formatPace(elapsedSeconds, distanceMeters, units)} />
-                <MetricTile label="Route points" value={String(route.length)} />
-              </View>
-
-              <View style={styles.mapShell}>
-                <FitnessMap route={route} currentPoint={currentPoint} />
-                {route.length === 0 && (
-                  <View pointerEvents="none" style={styles.mapEmpty}>
-                    <AppText variant="caption" style={{ color: colors.primary }}>
-                      GPS route will appear here
-                    </AppText>
+          <View style={styles.primaryControls}>
+            {selectedIsGps ? (
+              <>
+                {recordingState === 'idle' && (
+                  <Pressable onPress={startGps} disabled={saving} style={({ pressed }) => [styles.startButton, pressed && styles.pressed]}>
+                    <Ionicons name="play" size={30} color={colors.black} />
+                  </Pressable>
+                )}
+                {recordingState === 'recording' && (
+                  <View style={styles.recordingButtons}>
+                    <PrimaryButton label="Pause" variant="secondary" onPress={() => setRecordingState('paused')} style={styles.controlButton} />
+                    <PrimaryButton label={saving ? 'Saving...' : 'Stop'} variant="danger" onPress={stopGps} disabled={saving || elapsedSeconds < 5} style={styles.controlButton} />
                   </View>
                 )}
-              </View>
-
-              <View style={styles.controls}>
-                {recordingState === 'idle' && <PrimaryButton label="Start GPS" onPress={startGps} disabled={saving} />}
-                {recordingState === 'recording' && <PrimaryButton label="Pause" variant="secondary" onPress={pauseGps} />}
-                {recordingState === 'paused' && <PrimaryButton label="Resume" onPress={resumeGps} />}
-                {recordingState !== 'idle' && (
-                  <PrimaryButton label={saving ? 'Saving...' : 'Stop and save'} variant="danger" onPress={stopGps} disabled={saving || elapsedSeconds < 5} />
+                {recordingState === 'paused' && (
+                  <View style={styles.recordingButtons}>
+                    <PrimaryButton label="Resume" onPress={() => setRecordingState('recording')} style={styles.controlButton} />
+                    <PrimaryButton label={saving ? 'Saving...' : 'Stop'} variant="danger" onPress={stopGps} disabled={saving || elapsedSeconds < 5} style={styles.controlButton} />
+                  </View>
                 )}
-              </View>
-            </View>
-          ) : (
-            <Card>
-              <AppText variant="subtitle">{ACTIVITY_LABELS[selectedType]}</AppText>
-              <TextField placeholder="Duration minutes" keyboardType="numeric" value={durationMinutes} onChangeText={setDurationMinutes} />
-              <TextField placeholder="Sets optional" keyboardType="numeric" value={sets} onChangeText={setSets} />
-              <TextField placeholder="Reps optional" keyboardType="numeric" value={reps} onChangeText={setReps} />
-              <TextField placeholder="Weight kg optional" keyboardType="numeric" value={weightKg} onChangeText={setWeightKg} />
-              <PrimaryButton
-                label={saving ? 'Saving...' : 'Save workout'}
-                onPress={saveManualWorkout}
-                disabled={saving || Number(durationMinutes || 0) <= 0}
-              />
-            </Card>
-          )}
-        </>
-      )}
+              </>
+            ) : (
+              <Pressable onPress={() => setManualModalVisible(true)} disabled={saving} style={({ pressed }) => [styles.startButton, pressed && styles.pressed]}>
+                <Ionicons name="add" size={30} color={colors.black} />
+              </Pressable>
+            )}
+          </View>
+
+          <View style={styles.sideSpacer} />
+        </View>
+      </View>
+
+      <SportSelectorModal
+        visible={sportModalVisible}
+        search={sportSearch}
+        onSearch={setSportSearch}
+        groups={visibleSportGroups}
+        selectedType={selectedType}
+        onSelect={(type) => {
+          setSelectedType(type);
+          setSportModalVisible(false);
+          setSportSearch('');
+        }}
+        onClose={() => setSportModalVisible(false)}
+      />
+
+      <ManualWorkoutModal
+        visible={manualModalVisible}
+        type={selectedType}
+        durationMinutes={durationMinutes}
+        sets={sets}
+        reps={reps}
+        weightKg={weightKg}
+        saving={saving}
+        onDuration={setDurationMinutes}
+        onSets={setSets}
+        onReps={setReps}
+        onWeight={setWeightKg}
+        onSave={saveManualWorkout}
+        onClose={() => setManualModalVisible(false)}
+      />
+
+      <PostActivityModal
+        activity={savedActivity}
+        units={units}
+        uploading={photoUploading}
+        onCamera={() => addPhoto('camera')}
+        onLibrary={() => addPhoto('library')}
+        onClose={closePostActivity}
+      />
     </Screen>
   );
 }
 
+const StatPill = ({ label, value }: { label: string; value: string }) => (
+  <View style={styles.statPill}>
+    <AppText variant="caption" muted>
+      {label}
+    </AppText>
+    <AppText style={styles.statValue}>{value}</AppText>
+  </View>
+);
+
+const SportSelectorModal = ({
+  visible,
+  search,
+  groups,
+  selectedType,
+  onSearch,
+  onSelect,
+  onClose
+}: {
+  visible: boolean;
+  search: string;
+  groups: { title: string; items: readonly ActivityType[] }[];
+  selectedType: ActivityType;
+  onSearch: (value: string) => void;
+  onSelect: (type: ActivityType) => void;
+  onClose: () => void;
+}) => (
+  <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <View style={styles.modalBackdrop}>
+      <View style={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <View>
+            <AppText variant="caption" style={{ color: colors.primary }}>
+              Activity
+            </AppText>
+            <AppText variant="title">Choose sport</AppText>
+          </View>
+          <Pressable onPress={onClose} style={styles.iconButton}>
+            <Ionicons name="close" size={22} color={colors.text} />
+          </Pressable>
+        </View>
+        <TextField value={search} onChangeText={onSearch} placeholder="Search sports" />
+        <ScrollView contentContainerStyle={styles.sportList}>
+          {groups.map((group) =>
+            group.items.length ? (
+              <View key={group.title} style={styles.sportGroup}>
+                <AppText variant="caption" style={{ color: colors.primary }}>
+                  {group.title}
+                </AppText>
+                {group.items.map((type) => (
+                  <Pressable
+                    key={type}
+                    onPress={() => onSelect(type)}
+                    style={[styles.sportRow, selectedType === type && styles.sportRowActive]}
+                  >
+                    <Ionicons name={isGpsActivity(type) ? 'navigate-outline' : 'barbell-outline'} size={20} color={colors.primary} />
+                    <AppText style={{ flex: 1 }}>{ACTIVITY_LABELS[type]}</AppText>
+                    {selectedType === type && <Ionicons name="checkmark-circle" size={20} color={colors.success} />}
+                  </Pressable>
+                ))}
+              </View>
+            ) : null
+          )}
+        </ScrollView>
+      </View>
+    </View>
+  </Modal>
+);
+
+const ManualWorkoutModal = ({
+  visible,
+  type,
+  durationMinutes,
+  sets,
+  reps,
+  weightKg,
+  saving,
+  onDuration,
+  onSets,
+  onReps,
+  onWeight,
+  onSave,
+  onClose
+}: {
+  visible: boolean;
+  type: ActivityType;
+  durationMinutes: string;
+  sets: string;
+  reps: string;
+  weightKg: string;
+  saving: boolean;
+  onDuration: (value: string) => void;
+  onSets: (value: string) => void;
+  onReps: (value: string) => void;
+  onWeight: (value: string) => void;
+  onSave: () => void;
+  onClose: () => void;
+}) => (
+  <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <View style={styles.modalBackdrop}>
+      <View style={styles.sheet}>
+        <View style={styles.sheetHeader}>
+          <View>
+            <AppText variant="caption" style={{ color: colors.primary }}>
+              Manual log
+            </AppText>
+            <AppText variant="title">{ACTIVITY_LABELS[type]}</AppText>
+          </View>
+          <Pressable onPress={onClose} style={styles.iconButton}>
+            <Ionicons name="close" size={22} color={colors.text} />
+          </Pressable>
+        </View>
+        <TextField placeholder="Duration minutes" keyboardType="numeric" value={durationMinutes} onChangeText={onDuration} />
+        <TextField placeholder="Sets optional" keyboardType="numeric" value={sets} onChangeText={onSets} />
+        <TextField placeholder="Reps optional" keyboardType="numeric" value={reps} onChangeText={onReps} />
+        <TextField placeholder="Weight kg optional" keyboardType="numeric" value={weightKg} onChangeText={onWeight} />
+        <PrimaryButton label={saving ? 'Saving...' : 'Save workout'} onPress={onSave} disabled={saving || Number(durationMinutes || 0) <= 0} />
+      </View>
+    </View>
+  </Modal>
+);
+
+const PostActivityModal = ({
+  activity,
+  units,
+  uploading,
+  onCamera,
+  onLibrary,
+  onClose
+}: {
+  activity: Activity | null;
+  units: 'metric' | 'imperial';
+  uploading: boolean;
+  onCamera: () => void;
+  onLibrary: () => void;
+  onClose: () => void;
+}) => (
+  <Modal visible={Boolean(activity)} transparent animationType="slide" onRequestClose={onClose}>
+    <View style={styles.modalBackdrop}>
+      {activity && (
+        <View style={styles.sheet}>
+          <View style={styles.sheetHeader}>
+            <View>
+              <AppText variant="caption" style={{ color: colors.success }}>
+                Activity saved
+              </AppText>
+              <AppText variant="title">Add a photo?</AppText>
+            </View>
+            <Pressable onPress={onClose} style={styles.iconButton}>
+              <Ionicons name="close" size={22} color={colors.text} />
+            </Pressable>
+          </View>
+          {activity.photoUrl ? (
+            <Image source={{ uri: activity.photoUrl }} style={styles.postPhoto} />
+          ) : (
+            <View style={styles.photoPlaceholder}>
+              <Ionicons name="image-outline" size={34} color={colors.primary} />
+              <AppText muted>Attach a memory from this workout</AppText>
+            </View>
+          )}
+          <View style={styles.summaryRow}>
+            <StatPill label="Sport" value={ACTIVITY_LABELS[activity.type]} />
+            <StatPill label="Time" value={formatDuration(activity.durationSeconds)} />
+            <StatPill label="Distance" value={activity.distanceMeters ? formatDistance(activity.distanceMeters, units) : 'Manual'} />
+          </View>
+          <PrimaryButton label={uploading ? 'Uploading...' : 'Take photo'} onPress={onCamera} disabled={uploading} />
+          <PrimaryButton label={uploading ? 'Uploading...' : 'Choose from library'} variant="secondary" onPress={onLibrary} disabled={uploading} />
+          <PrimaryButton label={activity.photoUrl ? 'Done' : 'Skip'} variant="secondary" onPress={onClose} disabled={uploading} />
+        </View>
+      )}
+    </View>
+  </Modal>
+);
+
 const styles = StyleSheet.create({
-  segment: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    borderRadius: radii.pill,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.borderDim,
-    padding: spacing.xs
-  },
-  segmentItem: {
+  shell: {
     flex: 1,
-    minHeight: 42,
-    borderRadius: radii.pill,
-    alignItems: 'center',
-    justifyContent: 'center'
+    gap: spacing.md
   },
-  segmentActive: {
-    backgroundColor: colors.primarySoft,
-    borderWidth: 1,
-    borderColor: colors.primary
-  },
-  segmentText: {
-    color: colors.primary,
-    fontWeight: '900'
-  },
-  optionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    flexShrink: 0
-  },
-  option: {
-    width: '47.8%',
-    minHeight: 48,
-    borderRadius: radii.md,
+  mapArea: {
+    flex: 1,
+    minHeight: 0,
+    borderRadius: radii.lg,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.borderDim,
-    backgroundColor: colors.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.sm
+    backgroundColor: colors.black
   },
-  optionActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primarySoft
-  },
-  optionTextActive: {
-    color: colors.text,
-    fontWeight: '800'
-  },
-  metricsRow: {
+  topOverlay: {
+    position: 'absolute',
+    top: spacing.md,
+    left: spacing.md,
+    right: spacing.md,
     flexDirection: 'row',
     gap: spacing.sm
   },
-  gpsLayout: {
+  statPill: {
     flex: 1,
-    gap: spacing.sm,
-    minHeight: 0
+    minHeight: 66,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: 'rgba(11, 22, 40, 0.86)',
+    padding: spacing.sm,
+    justifyContent: 'center'
   },
-  mapShell: {
-    height: 190,
+  statValue: {
+    color: colors.text,
+    fontWeight: '900'
+  },
+  sportBadge: {
+    position: 'absolute',
+    left: spacing.md,
+    top: 100,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(11, 22, 40, 0.78)',
+    paddingHorizontal: spacing.md,
+    minHeight: 38
+  },
+  sportBadgeText: {
+    color: colors.primary,
+    fontWeight: '900'
+  },
+  bottomControls: {
+    minHeight: 116,
     borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    overflow: 'hidden',
-    backgroundColor: colors.black
+    backgroundColor: colors.card,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+    gap: spacing.sm,
+    ...shadows.card
   },
-  mapEmpty: {
-    ...StyleSheet.absoluteFillObject,
+  sportButton: {
+    width: 96,
+    minHeight: 70,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.cardHigh,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(3, 7, 19, 0.45)'
+    gap: spacing.xs,
+    paddingHorizontal: spacing.xs
   },
-  controls: {
+  sportButtonText: {
+    color: colors.primary,
+    textAlign: 'center'
+  },
+  primaryControls: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  startButton: {
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadows.cyanGlow
+  },
+  recordingButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm
+  },
+  controlButton: {
+    minWidth: 108,
+    minHeight: 56,
+    paddingHorizontal: spacing.md
+  },
+  sideSpacer: {
+    width: 96
+  },
+  pressed: {
+    transform: [{ scale: 0.97 }]
+  },
+  disabled: {
+    opacity: 0.45
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(2, 4, 10, 0.78)',
+    justifyContent: 'flex-end'
+  },
+  sheet: {
+    maxHeight: '90%',
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    padding: spacing.lg,
+    gap: spacing.md
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md
+  },
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.cardHigh,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  sportList: {
+    gap: spacing.md,
+    paddingBottom: spacing.md
+  },
+  sportGroup: {
+    gap: spacing.sm
+  },
+  sportRow: {
+    minHeight: 56,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.cardHigh,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
-    flexShrink: 0,
-    paddingTop: spacing.xs
+    paddingHorizontal: spacing.md
+  },
+  sportRowActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft
+  },
+  photoPlaceholder: {
+    minHeight: 170,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.black,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm
+  },
+  postPhoto: {
+    width: '100%',
+    height: 210,
+    borderRadius: radii.lg,
+    backgroundColor: colors.black
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    gap: spacing.sm
   }
 });

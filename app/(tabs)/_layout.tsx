@@ -6,11 +6,11 @@ import { useBootstrap } from '@/hooks/useBootstrap';
 import { supabase } from '@/lib/supabase';
 
 const icons = {
-  record: 'radio-outline',
   shop: 'storefront-outline',
+  record: 'radio-outline',
   character: 'person-circle-outline',
   missions: 'sparkles-outline',
-  profile: 'settings-outline'
+  me: 'person-outline'
 } as const;
 
 export default function TabsLayout() {
@@ -41,11 +41,11 @@ export default function TabsLayout() {
         )
       })}
     >
-      <Tabs.Screen name="record" options={{ title: 'Record' }} />
       <Tabs.Screen name="shop" options={{ title: 'Shop' }} />
+      <Tabs.Screen name="record" options={{ title: 'Record' }} />
       <Tabs.Screen name="character" options={{ title: 'Character' }} />
       <Tabs.Screen name="missions" options={{ title: 'Missions' }} />
-      <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
+      <Tabs.Screen name="me" options={{ title: 'Me' }} />
     </Tabs>
   );
 }

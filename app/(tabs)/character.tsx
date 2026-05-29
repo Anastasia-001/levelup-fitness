@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { AvatarPreview } from '@/components/AvatarPreview';
-import { Card } from '@/components/Card';
 import { CosmeticThumbnail } from '@/components/CosmeticThumbnail';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { ProgressBar } from '@/components/ProgressBar';
@@ -31,7 +30,7 @@ export default function CharacterScreen() {
   const [customizing, setCustomizing] = useState(false);
 
   return (
-    <Screen>
+    <Screen scroll={false}>
       <View style={styles.topBar}>
         <View style={styles.identity}>
           <View style={styles.profileIcon}>
@@ -49,21 +48,25 @@ export default function CharacterScreen() {
         </View>
       </View>
 
-      <Card>
-        <Pressable onPress={() => setCustomizing(true)} style={({ pressed }) => [styles.hero, pressed && styles.pressed]}>
+      <Pressable onPress={() => setCustomizing(true)} style={({ pressed }) => [styles.hero, pressed && styles.pressed]}>
+        <View style={styles.sceneGlow} />
+        <View style={styles.floorGlow} />
+        <View style={styles.characterStage}>
           <View style={styles.levelBadge}>
             <AppText style={styles.levelBadgeText}>LVL {character?.level ?? 1}</AppText>
           </View>
           <AvatarPreview equipment={equippedCosmetics} />
-          <AppText muted>Tap to open wardrobe</AppText>
-        </Pressable>
-        <View>
-          <AppText variant="subtitle">Total EXP: {character?.totalExp ?? 0}</AppText>
-          <AppText muted>
-            {progress ? `${progress.currentLevelExp} / ${progress.nextLevelExp} EXP to next level` : 'Loading progress'}
-          </AppText>
         </View>
-      </Card>
+        <View style={styles.progressPanel}>
+          <View style={{ flex: 1 }}>
+            <AppText variant="subtitle">Total EXP: {character?.totalExp ?? 0}</AppText>
+            <AppText muted>
+              {progress ? `${progress.currentLevelExp} / ${progress.nextLevelExp} EXP to next level` : 'Loading progress'}
+            </AppText>
+          </View>
+          <AppText muted>Tap to open wardrobe</AppText>
+        </View>
+      </Pressable>
 
       <View style={styles.statsGrid}>
         {statRows.map(([label, key]) => {
@@ -152,7 +155,7 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
             ))}
           </View>
 
-          <View style={styles.itemList}>
+          <ScrollView contentContainerStyle={styles.itemList} showsVerticalScrollIndicator={false}>
             {items.map((item) => {
               const owned = canUseItem(item);
               const equipped = currentEquipped === item.id;
@@ -182,7 +185,7 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
                 </View>
               );
             })}
-          </View>
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -237,15 +240,51 @@ const styles = StyleSheet.create({
     fontWeight: '900'
   },
   hero: {
-    minHeight: 338,
+    flex: 1,
+    minHeight: 0,
+    borderRadius: radii.lg,
+    backgroundColor: 'rgba(2, 4, 10, 0.34)',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm
+  },
+  sceneGlow: {
+    position: 'absolute',
+    top: 18,
+    width: 230,
+    height: 260,
+    borderRadius: 120,
+    backgroundColor: colors.secondarySoft
+  },
+  floorGlow: {
+    position: 'absolute',
+    bottom: 70,
+    width: 250,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.primarySoft,
+    transform: [{ scaleX: 1.24 }]
+  },
+  characterStage: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  progressPanel: {
+    width: '100%',
+    minHeight: 58,
     borderRadius: radii.lg,
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.black,
+    borderColor: colors.borderDim,
+    backgroundColor: 'rgba(11, 22, 40, 0.72)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    gap: spacing.sm
+    gap: spacing.md
   },
   pressed: {
     opacity: 0.88
@@ -267,11 +306,12 @@ const styles = StyleSheet.create({
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm
+    gap: spacing.sm,
+    flexShrink: 0
   },
   statCard: {
     width: '48.4%',
-    minHeight: 124,
+    minHeight: 96,
     borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.borderDim,
@@ -285,7 +325,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end'
   },
   modalCard: {
-    maxHeight: '92%',
+    height: '92%',
     backgroundColor: colors.card,
     borderTopLeftRadius: radii.lg,
     borderTopRightRadius: radii.lg,
@@ -341,7 +381,8 @@ const styles = StyleSheet.create({
     fontWeight: '900'
   },
   itemList: {
-    gap: spacing.sm
+    gap: spacing.sm,
+    paddingBottom: spacing.lg
   },
   cosmeticRow: {
     minHeight: 94,

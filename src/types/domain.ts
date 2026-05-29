@@ -6,6 +6,7 @@ export type ActivityType = GpsActivityType | ManualActivityType;
 
 export type UnitPreference = 'metric' | 'imperial';
 export type CosmeticCategory = 'head' | 'shirt' | 'pants' | 'shoes' | 'accessory' | 'frame';
+export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
 
 export type RoutePoint = {
   latitude: number;
@@ -23,6 +24,8 @@ export type ActivityInput = {
   sets?: number;
   reps?: number;
   weightKg?: number;
+  photoUrl?: string;
+  photoPath?: string;
 };
 
 export type Activity = ActivityInput & {
@@ -51,7 +54,8 @@ export type CosmeticItem = {
   id: string;
   name: string;
   category: CosmeticCategory;
-  shopSection: 'Featured' | 'Outfits' | 'Shoes' | 'Accessories';
+  shopSection: 'Featured' | 'Shirts' | 'Pants' | 'Shoes' | 'Accessories' | 'Frames' | 'Rare';
+  rarity: Rarity;
   price: number;
   unlockLevel?: number;
   colors: {
@@ -82,7 +86,12 @@ export type EquippedCosmetics = {
 export type Profile = {
   id: string;
   username: string;
+  location: string | null;
   unitPreference: UnitPreference;
+  privacyControlsEnabled: boolean;
+  healthDataEnabled: boolean;
+  emailNotificationsEnabled: boolean;
+  pushNotificationsEnabled: boolean;
   createdAt: string;
 };
 
@@ -113,17 +122,32 @@ export type Database = {
         Row: {
           id: string;
           username: string;
+          location: string | null;
           unit_preference: UnitPreference;
+          privacy_controls_enabled: boolean;
+          health_data_enabled: boolean;
+          email_notifications_enabled: boolean;
+          push_notifications_enabled: boolean;
           created_at: string;
         };
         Insert: {
           id: string;
           username: string;
+          location?: string | null;
           unit_preference?: UnitPreference;
+          privacy_controls_enabled?: boolean;
+          health_data_enabled?: boolean;
+          email_notifications_enabled?: boolean;
+          push_notifications_enabled?: boolean;
         };
         Update: {
           username?: string;
+          location?: string | null;
           unit_preference?: UnitPreference;
+          privacy_controls_enabled?: boolean;
+          health_data_enabled?: boolean;
+          email_notifications_enabled?: boolean;
+          push_notifications_enabled?: boolean;
         };
         Relationships: [];
       };
@@ -175,6 +199,8 @@ export type Database = {
           sets: number | null;
           reps: number | null;
           weight_kg: number | null;
+          photo_url: string | null;
+          photo_path: string | null;
           exp_earned: number;
           stat_exp: Record<StatKey, number>;
         };
@@ -189,6 +215,8 @@ export type Database = {
           sets?: number | null;
           reps?: number | null;
           weight_kg?: number | null;
+          photo_url?: string | null;
+          photo_path?: string | null;
           exp_earned: number;
           stat_exp: Record<StatKey, number>;
         };
@@ -202,6 +230,8 @@ export type Database = {
           sets?: number | null;
           reps?: number | null;
           weight_kg?: number | null;
+          photo_url?: string | null;
+          photo_path?: string | null;
           exp_earned?: number;
           stat_exp?: Record<StatKey, number>;
         };

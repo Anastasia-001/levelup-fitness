@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { ensureEquipment } from '@/services/cosmeticService';
-import { UnitPreference } from '@/types/domain';
+import { Profile } from '@/types/domain';
 import { mapCharacter, mapProfile } from '@/services/mappers';
 
 export const ensureProfileAndCharacter = async (userId: string, fallbackUsername: string) => {
@@ -18,7 +18,8 @@ export const ensureProfileAndCharacter = async (userId: string, fallbackUsername
     const { error } = await supabase.from('profiles').insert({
       id: userId,
       username: fallbackUsername,
-      unit_preference: 'metric'
+      unit_preference: 'metric',
+      location: 'LevelUp City'
     });
     if (error) throw error;
   }
@@ -55,13 +56,29 @@ export const getCharacter = async (userId: string) => {
 
 export const updateProfile = async (
   userId: string,
-  values: { username?: string; unitPreference?: UnitPreference }
+  values: Partial<
+    Pick<
+      Profile,
+      | 'username'
+      | 'location'
+      | 'unitPreference'
+      | 'privacyControlsEnabled'
+      | 'healthDataEnabled'
+      | 'emailNotificationsEnabled'
+      | 'pushNotificationsEnabled'
+    >
+  >
 ) => {
   const { data, error } = await supabase
     .from('profiles')
     .update({
       username: values.username,
-      unit_preference: values.unitPreference
+      location: values.location,
+      unit_preference: values.unitPreference,
+      privacy_controls_enabled: values.privacyControlsEnabled,
+      health_data_enabled: values.healthDataEnabled,
+      email_notifications_enabled: values.emailNotificationsEnabled,
+      push_notifications_enabled: values.pushNotificationsEnabled
     })
     .eq('id', userId)
     .select()

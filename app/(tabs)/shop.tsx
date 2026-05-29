@@ -13,7 +13,15 @@ import { purchaseCosmetic } from '@/services/cosmeticService';
 import { useAppStore } from '@/store/appStore';
 import { CosmeticItem } from '@/types/domain';
 
-const sections: CosmeticItem['shopSection'][] = ['Featured', 'Outfits', 'Shoes', 'Accessories'];
+const sections: CosmeticItem['shopSection'][] = [
+  'Featured',
+  'Shirts',
+  'Pants',
+  'Shoes',
+  'Accessories',
+  'Frames',
+  'Rare'
+];
 
 export default function ShopScreen() {
   const character = useAppStore((state) => state.character);
@@ -84,7 +92,7 @@ export default function ShopScreen() {
                   <View style={styles.itemHeader}>
                     <View style={{ flex: 1 }}>
                       <AppText variant="subtitle">{item.name}</AppText>
-                      <AppText muted>{item.category.toUpperCase()}</AppText>
+                      <AppText muted>{item.category.toUpperCase()} - {item.rarity.toUpperCase()}</AppText>
                     </View>
                     {isOwned && <StatusPill label="Owned" color={colors.success} />}
                     {levelLocked && <StatusPill label={`Lv ${item.unlockLevel}`} color={colors.secondary} />}

@@ -55,6 +55,8 @@ export const saveActivity = async (userId: string, input: ActivityInput) => {
       sets: input.sets ?? null,
       reps: input.reps ?? null,
       weight_kg: input.weightKg ?? null,
+      photo_url: input.photoUrl ?? null,
+      photo_path: input.photoPath ?? null,
       exp_earned: expEarned,
       stat_exp: statExp
     })
@@ -71,6 +73,47 @@ export const saveActivity = async (userId: string, input: ActivityInput) => {
   const character = await persistCharacter(afterMissions);
 
   return { activity, character, missions, expEarned: expEarned + bonusExp, bonusExp };
+};
+
+export const updateActivityPhoto = async (
+  activityId: string,
+  values: { photoUrl: string; photoPath: string }
+) => {
+  const { data, error } = await supabase
+    .from('activities')
+    .update({
+      photo_url: values.photoUrl,
+      photo_path: values.photoPath
+    })
+    .eq('id', activityId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapActivity(data);
+};
+
+export const uploadActivityPhoto = async (
+  userId: string,
+  activityId: string,
+  uri: string
+) => {
+  const response = await fetch(uri);
+  const blob = await response.blob();
+  const extension = uri.split('.').pop()?.split('?')[0] || 'jpg';
+  const path = `${userId}/${activityId}-${Date.now()}.${extension}`;
+
+  const { error } = await supabase.storage
+    .from('activity-photos')
+    .upload(path, blob, {
+      contentType: blob.type || 'image/jpeg',
+      upsert: true
+    });
+
+  if (error) throw error;
+
+  const { data } = supabase.storage.from('activity-photos').getPublicUrl(path);
+  return updateActivityPhoto(activityId, { photoUrl: data.publicUrl, photoPath: path });
 };
 
 const applyMissionBonus = (character: Character, bonusExp: number): Character => {

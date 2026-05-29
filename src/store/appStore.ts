@@ -16,6 +16,7 @@ type AppState = {
   setEquippedCosmetics: (equippedCosmetics: EquippedCosmetics | null) => void;
   addOwnedCosmetic: (ownedCosmetic: OwnedCosmetic) => void;
   addActivity: (activity: Activity) => void;
+  updateActivity: (activity: Activity) => void;
   reset: () => void;
 };
 
@@ -35,6 +36,10 @@ export const useAppStore = create<AppState>((set) => ({
   addOwnedCosmetic: (ownedCosmetic) =>
     set((state) => ({ ownedCosmetics: [...state.ownedCosmetics, ownedCosmetic] })),
   addActivity: (activity) => set((state) => ({ activities: [activity, ...state.activities] })),
+  updateActivity: (activity) =>
+    set((state) => ({
+      activities: state.activities.map((current) => (current.id === activity.id ? activity : current))
+    })),
   reset: () =>
     set({
       profile: null,
