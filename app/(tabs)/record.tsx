@@ -508,7 +508,7 @@ const styles = StyleSheet.create({
   },
   topOverlay: {
     position: 'absolute',
-    top: spacing.md,
+    bottom: spacing.md,
     left: spacing.md,
     right: spacing.md,
     flexDirection: 'row',
@@ -531,7 +531,7 @@ const styles = StyleSheet.create({
   sportBadge: {
     position: 'absolute',
     left: spacing.md,
-    top: 100,
+    top: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
