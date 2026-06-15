@@ -1,17 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
-import { Card } from '@/components/Card';
 import { CosmeticThumbnail } from '@/components/CosmeticThumbnail';
-import { PrimaryButton } from '@/components/PrimaryButton';
 import { Screen } from '@/components/Screen';
 import { SHOP_COSMETICS } from '@/constants/cosmetics';
-import { colors, radii, spacing } from '@/constants/theme';
+import { colors, radii, shadows, spacing } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { purchaseCosmetic } from '@/services/cosmeticService';
 import { useAppStore } from '@/store/appStore';
-import { CosmeticItem } from '@/types/domain';
+import { CosmeticCategory, CosmeticItem, EquippedCosmetics } from '@/types/domain';
 
 const sections: CosmeticItem['shopSection'][] = [
   'Featured',
@@ -26,6 +24,7 @@ const sections: CosmeticItem['shopSection'][] = [
 export default function ShopScreen() {
   const character = useAppStore((state) => state.character);
   const ownedCosmetics = useAppStore((state) => state.ownedCosmetics);
+  const equippedCosmetics = useAppStore((state) => state.equippedCosmetics);
   const setCharacter = useAppStore((state) => state.setCharacter);
   const addOwnedCosmetic = useAppStore((state) => state.addOwnedCosmetic);
   const [userId, setUserId] = useState<string | null>(null);
@@ -34,7 +33,10 @@ export default function ShopScreen() {
   const coins = character?.coins ?? 0;
   const level = character?.level ?? 1;
   const grouped = useMemo(
-    () => sections.map((section) => ({ section, items: SHOP_COSMETICS.filter((item) => item.shopSection === section) })),
+    () =>
+      sections
+        .map((section) => ({ section, items: SHOP_COSMETICS.filter((item) => item.shopSection === section) }))
+        .filter(({ items }) => items.length > 0),
     []
   );
 
@@ -73,53 +75,70 @@ export default function ShopScreen() {
           <AppText variant="title">Shop</AppText>
         </View>
         <View style={styles.coinPill}>
-          <Ionicons name="diamond" size={16} color={colors.coin} />
+          <Ionicons name="ellipse" size={16} color={colors.coin} />
           <AppText style={styles.coinText}>{coins}</AppText>
         </View>
       </View>
 
       {grouped.map(({ section, items }) => (
         <View key={section} style={styles.section}>
-          <AppText variant="subtitle">{section}</AppText>
+          <View style={styles.sectionHeader}>
+            <AppText variant="subtitle">{section}</AppText>
+            <View style={styles.sectionLine} />
+          </View>
           <View style={styles.grid}>
             {items.map((item) => {
               const isOwned = ownedIds.includes(item.id);
+              const isEquipped = getEquippedId(equippedCosmetics, item.category) === item.id;
               const levelLocked = level < (item.unlockLevel ?? 1);
               const canBuy = coins >= item.price && !isOwned && !levelLocked;
+              const stateLabel = isEquipped
+                ? 'Equipped'
+                : isOwned
+                  ? 'Owned'
+                  : levelLocked
+                    ? 'Locked'
+                    : canBuy
+                      ? 'Buy'
+                      : 'Need coins';
               return (
-                <Card key={item.id}>
-                  <CosmeticThumbnail item={item} />
-                  <View style={styles.itemHeader}>
-                    <View style={{ flex: 1 }}>
-                      <AppText variant="subtitle">{item.name}</AppText>
-                      <AppText muted>{item.category.toUpperCase()} - {item.rarity.toUpperCase()}</AppText>
-                    </View>
-                    {isOwned && <StatusPill label="Owned" color={colors.success} />}
-                    {levelLocked && <StatusPill label={`Lv ${item.unlockLevel}`} color={colors.secondary} />}
+                <View key={item.id} style={[styles.itemCard, levelLocked && styles.lockedCard]}>
+                  <View style={styles.thumbnailWrap}>
+                    <CosmeticThumbnail item={item} compact />
+                    <StatusPill
+                      label={isEquipped ? 'Equipped' : isOwned ? 'Owned' : levelLocked ? `Lv ${item.unlockLevel}` : item.rarity}
+                      color={isEquipped ? colors.primary : isOwned ? colors.success : levelLocked ? colors.secondary : rarityColor(item.rarity)}
+                    />
                   </View>
-                  <AppText muted>{item.description}</AppText>
+                  <AppText style={styles.itemName} numberOfLines={2}>
+                    {item.name}
+                  </AppText>
+                  <AppText variant="caption" style={[styles.rarity, { color: rarityColor(item.rarity) }]}>
+                    {item.rarity}
+                  </AppText>
                   <View style={styles.priceRow}>
-                    <Ionicons name="diamond" size={14} color={colors.coin} />
+                    <Ionicons name="ellipse" size={11} color={colors.coin} />
                     <AppText style={styles.price}>{item.price}</AppText>
-                    {!isOwned && !levelLocked && coins < item.price && <AppText muted>Not enough coins</AppText>}
                   </View>
-                  <PrimaryButton
-                    label={
-                      isOwned
-                        ? 'Owned'
-                        : levelLocked
-                          ? `Unlocks at Level ${item.unlockLevel}`
-                          : canBuy
-                            ? purchasingId === item.id
-                              ? 'Buying...'
-                              : 'Buy'
-                            : 'Not enough coins'
-                    }
+                  {levelLocked && (
+                    <AppText variant="caption" style={styles.lockText} numberOfLines={1}>
+                      Unlocks Lv {item.unlockLevel}
+                    </AppText>
+                  )}
+                  <Pressable
                     onPress={() => buy(item)}
                     disabled={!canBuy || purchasingId === item.id}
-                    variant={canBuy ? 'primary' : 'secondary'}
-                  />
-                </Card>
+                    style={({ pressed }) => [
+                      styles.buyButton,
+                      canBuy ? styles.buyButtonActive : styles.buyButtonDisabled,
+                      pressed && canBuy && styles.pressed
+                    ]}
+                  >
+                    <AppText style={[styles.buyText, canBuy && styles.buyTextActive]}>
+                      {purchasingId === item.id ? 'Buying' : stateLabel}
+                    </AppText>
+                  </Pressable>
+                </View>
               );
             })}
           </View>
@@ -134,6 +153,25 @@ const StatusPill = ({ label, color }: { label: string; color: string }) => (
     <AppText style={[styles.statusText, { color }]}>{label}</AppText>
   </View>
 );
+
+const getEquippedId = (equipment: EquippedCosmetics | null, category: CosmeticCategory) => {
+  if (!equipment) return null;
+  const key = `${category}ItemId` as keyof EquippedCosmetics;
+  return equipment[key] as string | null;
+};
+
+const rarityColor = (rarity: CosmeticItem['rarity']) => {
+  switch (rarity) {
+    case 'legendary':
+      return colors.coin;
+    case 'epic':
+      return colors.secondary;
+    case 'rare':
+      return colors.primary;
+    default:
+      return colors.muted;
+  }
+};
 
 const styles = StyleSheet.create({
   header: {
@@ -163,31 +201,107 @@ const styles = StyleSheet.create({
   section: {
     gap: spacing.sm
   },
-  grid: {
-    gap: spacing.md
-  },
-  itemHeader: {
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm
+    gap: spacing.sm,
+    marginTop: spacing.xs
+  },
+  sectionLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.borderDim
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs
+  },
+  itemCard: {
+    width: '32%',
+    minHeight: 214,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.card,
+    padding: spacing.xs,
+    gap: spacing.xs,
+    ...shadows.card
+  },
+  lockedCard: {
+    opacity: 0.86
+  },
+  thumbnailWrap: {
+    alignItems: 'center',
+    gap: spacing.xs
+  },
+  itemName: {
+    minHeight: 38,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '900',
+    textAlign: 'center'
+  },
+  rarity: {
+    textAlign: 'center',
+    fontSize: 10
   },
   priceRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs
+    justifyContent: 'center',
+    gap: spacing.xs,
+    minHeight: 20
   },
   price: {
     color: colors.coin,
-    fontWeight: '900'
+    fontWeight: '900',
+    fontSize: 12
   },
   statusPill: {
     borderRadius: radii.pill,
     borderWidth: 1,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
     backgroundColor: colors.cardHigh
   },
   statusText: {
-    fontWeight: '900'
+    fontWeight: '900',
+    fontSize: 10,
+    textTransform: 'uppercase'
+  },
+  lockText: {
+    color: colors.secondary,
+    textAlign: 'center',
+    fontSize: 9
+  },
+  buyButton: {
+    minHeight: 32,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 'auto',
+    paddingHorizontal: spacing.xs
+  },
+  buyButtonActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary
+  },
+  buyButtonDisabled: {
+    borderColor: colors.borderDim,
+    backgroundColor: colors.cardHigh
+  },
+  buyText: {
+    color: colors.muted,
+    fontWeight: '900',
+    fontSize: 11,
+    textAlign: 'center'
+  },
+  buyTextActive: {
+    color: colors.black
+  },
+  pressed: {
+    transform: [{ scale: 0.97 }]
   }
 });
