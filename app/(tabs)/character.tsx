@@ -5,10 +5,9 @@ import { AppText } from '@/components/AppText';
 import { AvatarPreview } from '@/components/AvatarPreview';
 import { CosmeticThumbnail } from '@/components/CosmeticThumbnail';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { ProgressBar } from '@/components/ProgressBar';
 import { Screen } from '@/components/Screen';
 import { CATEGORY_LABELS, COSMETIC_CATEGORIES, visibleCosmeticsForCategory } from '@/constants/cosmetics';
-import { colors, radii, spacing } from '@/constants/theme';
+import { colors, radii, shadows, spacing } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { equipCosmetic } from '@/services/cosmeticService';
 import { useAppStore } from '@/store/appStore';
@@ -27,6 +26,7 @@ export default function CharacterScreen() {
   const profile = useAppStore((state) => state.profile);
   const equippedCosmetics = useAppStore((state) => state.equippedCosmetics);
   const progress = character ? levelFromTotalExp(character.totalExp) : null;
+  const diamonds = 0;
   const [customizing, setCustomizing] = useState(false);
 
   return (
@@ -37,18 +37,20 @@ export default function CharacterScreen() {
             <Ionicons name="person" size={18} color={colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
-            <AppText variant="subtitle">{profile?.username ?? 'Rookie'}</AppText>
-            <AppText muted>Level {character?.level ?? 1}</AppText>
-            <ProgressBar value={progress ? progress.currentLevelExp / progress.nextLevelExp : 0} />
+            <AppText style={styles.username}>{profile?.username ?? 'Rookie'}</AppText>
+            <AppText variant="caption" muted>
+              Level {character?.level ?? 1}
+            </AppText>
+            <MiniProgress value={progress ? progress.currentLevelExp / progress.nextLevelExp : 0} slim />
           </View>
         </View>
-        <View style={styles.coins}>
-          <Ionicons name="diamond" size={16} color={colors.coin} />
-          <AppText style={styles.coinText}>{character?.coins ?? 0}</AppText>
+        <View style={styles.currencyCluster}>
+          <CurrencyPill icon="ellipse" value={character?.coins ?? 0} color={colors.coin} />
+          <CurrencyPill icon="diamond" value={diamonds} color={colors.danger} />
         </View>
       </View>
 
-      <Pressable onPress={() => setCustomizing(true)} style={({ pressed }) => [styles.hero, pressed && styles.pressed]}>
+      <View style={styles.hero}>
         <View style={styles.sceneGlow} />
         <View style={styles.floorGlow} />
         <View style={styles.characterStage}>
@@ -57,28 +59,27 @@ export default function CharacterScreen() {
           </View>
           <AvatarPreview equipment={equippedCosmetics} />
         </View>
-        <View style={styles.progressPanel}>
-          <View style={{ flex: 1 }}>
-            <AppText variant="subtitle">Total EXP: {character?.totalExp ?? 0}</AppText>
-            <AppText muted>
-              {progress ? `${progress.currentLevelExp} / ${progress.nextLevelExp} EXP to next level` : 'Loading progress'}
-            </AppText>
-          </View>
-          <AppText muted>Tap to open wardrobe</AppText>
-        </View>
-      </Pressable>
+        <Pressable onPress={() => setCustomizing(true)} style={({ pressed }) => [styles.wardrobeButton, pressed && styles.pressed]}>
+          <Ionicons name="shirt-outline" size={18} color={colors.primary} />
+          <AppText style={styles.wardrobeButtonText}>Tap to open wardrobe</AppText>
+        </Pressable>
+      </View>
 
       <View style={styles.statsGrid}>
         {statRows.map(([label, key]) => {
           const exp = character?.[key] ?? 0;
           return (
             <View key={key} style={styles.statCard}>
-              <AppText variant="caption" style={{ color: colors.primary }}>
+              <AppText variant="caption" style={styles.statLabel}>
                 {label}
               </AppText>
-              <AppText variant="metric">Lv {statLevel(exp)}</AppText>
-              <AppText muted>{exp} EXP</AppText>
-              <ProgressBar value={(exp % 100) / 100} />
+              <View style={styles.statValueRow}>
+                <AppText style={styles.statLevel}>Lv {statLevel(exp)}</AppText>
+                <AppText variant="caption" muted>
+                  {exp} EXP
+                </AppText>
+              </View>
+              <MiniProgress value={(exp % 100) / 100} />
             </View>
           );
         })}
@@ -192,6 +193,27 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
   );
 };
 
+const MiniProgress = ({ value, slim = false }: { value: number; slim?: boolean }) => (
+  <View style={[styles.miniProgressTrack, slim && styles.miniProgressSlim]}>
+    <View style={[styles.miniProgressFill, { width: `${Math.max(0, Math.min(1, value)) * 100}%` }]} />
+  </View>
+);
+
+const CurrencyPill = ({
+  icon,
+  value,
+  color
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  value: number;
+  color: string;
+}) => (
+  <View style={[styles.currencyPill, { borderColor: color }]}>
+    <Ionicons name={icon} size={15} color={color} />
+    <AppText style={[styles.currencyText, { color }]}>{value}</AppText>
+  </View>
+);
+
 const getEquippedId = (
   equipment: ReturnType<typeof useAppStore.getState>['equippedCosmetics'],
   category: CosmeticCategory
@@ -215,28 +237,53 @@ const styles = StyleSheet.create({
     gap: spacing.sm
   },
   profileIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: colors.primarySoft,
     borderColor: colors.primary,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center'
   },
-  coins: {
+  username: {
+    fontSize: 16,
+    fontWeight: '900'
+  },
+  miniProgressTrack: {
+    height: 6,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.black,
+    overflow: 'hidden',
+    marginTop: spacing.xs
+  },
+  miniProgressSlim: {
+    height: 5,
+    maxWidth: 168
+  },
+  miniProgressFill: {
+    height: '100%',
+    borderRadius: radii.pill,
+    backgroundColor: colors.primary
+  },
+  currencyCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs
+  },
+  currencyPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    minHeight: 40,
+    minHeight: 36,
     borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: colors.warning,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
     backgroundColor: colors.cardHigh
   },
-  coinText: {
-    color: colors.coin,
+  currencyText: {
     fontWeight: '900'
   },
   hero: {
@@ -247,25 +294,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     overflow: 'hidden',
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.sm
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.md
   },
   sceneGlow: {
     position: 'absolute',
-    top: 18,
-    width: 230,
-    height: 260,
-    borderRadius: 120,
+    top: 6,
+    width: 280,
+    height: 330,
+    borderRadius: 150,
     backgroundColor: colors.secondarySoft
   },
   floorGlow: {
     position: 'absolute',
-    bottom: 70,
-    width: 250,
-    height: 52,
-    borderRadius: 26,
+    bottom: 66,
+    width: 292,
+    height: 58,
+    borderRadius: 30,
     backgroundColor: colors.primarySoft,
-    transform: [{ scaleX: 1.24 }]
+    transform: [{ scaleX: 1.34 }]
   },
   characterStage: {
     flex: 1,
@@ -273,18 +320,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center'
   },
-  progressPanel: {
-    width: '100%',
-    minHeight: 58,
-    borderRadius: radii.lg,
+  wardrobeButton: {
+    minWidth: 228,
+    minHeight: 52,
+    borderRadius: radii.pill,
     borderWidth: 1,
-    borderColor: colors.borderDim,
-    backgroundColor: 'rgba(11, 22, 40, 0.72)',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(11, 22, 40, 0.78)',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    ...shadows.cyanGlow
+  },
+  wardrobeButtonText: {
+    color: colors.primary,
+    fontWeight: '900'
   },
   pressed: {
     opacity: 0.88
@@ -306,18 +358,32 @@ const styles = StyleSheet.create({
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    gap: spacing.xs,
     flexShrink: 0
   },
   statCard: {
-    width: '48.4%',
-    minHeight: 96,
-    borderRadius: radii.lg,
+    width: '49%',
+    minHeight: 66,
+    borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.borderDim,
     backgroundColor: colors.card,
-    padding: spacing.md,
+    padding: spacing.sm,
     gap: spacing.xs
+  },
+  statLabel: {
+    color: colors.primary,
+    fontSize: 10
+  },
+  statValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: spacing.xs
+  },
+  statLevel: {
+    fontSize: 16,
+    fontWeight: '900'
   },
   modalBackdrop: {
     flex: 1,

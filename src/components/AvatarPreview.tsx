@@ -10,7 +10,7 @@ type AvatarPreviewProps = {
 
 export const AvatarPreview = ({ equipment, size = 'large' }: AvatarPreviewProps) => {
   const equipped = getEquippedItems(equipment);
-  const scale = size === 'large' ? 1 : 0.72;
+  const scale = size === 'large' ? 1.15 : 0.64;
 
   return (
     <View style={[styles.wrap, { transform: [{ scale }] }]}>
@@ -19,12 +19,16 @@ export const AvatarPreview = ({ equipment, size = 'large' }: AvatarPreviewProps)
       <View style={styles.motionLineLeft} />
       <View style={styles.motionLineRight} />
       <View style={styles.hairBack} />
+      <View style={styles.hairRibbon} />
       <View style={styles.head}>
         <View style={styles.fringe} />
         <View style={styles.sideLockLeft} />
         <View style={styles.sideLockRight} />
+        <View style={styles.hairShine} />
         <View style={styles.eyeLeft} />
         <View style={styles.eyeRight} />
+        <View style={styles.eyeSparkLeft} />
+        <View style={styles.eyeSparkRight} />
         <View style={styles.cheekLeft} />
         <View style={styles.cheekRight} />
         <View style={styles.smile} />
@@ -32,18 +36,28 @@ export const AvatarPreview = ({ equipment, size = 'large' }: AvatarPreviewProps)
       <Headband item={equipped.head} />
       <View style={styles.neck} />
       <View style={[styles.torso, { backgroundColor: equipped.shirt?.colors.primary ?? colors.cardSoft, borderColor: equipped.shirt?.colors.secondary ?? colors.primary }]}>
+        <View style={styles.collar} />
         <View style={[styles.torsoPanel, { backgroundColor: equipped.shirt?.colors.accent ?? colors.primary }]} />
+        <View style={styles.torsoHighlight} />
       </View>
       <View style={[styles.arm, styles.armLeft]} />
       <View style={[styles.arm, styles.armRight]} />
       <View style={styles.waist} />
       <View style={styles.legs}>
-        <View style={[styles.leg, { backgroundColor: equipped.pants?.colors.primary ?? '#172A4A', borderColor: equipped.pants?.colors.secondary ?? colors.borderDim }]} />
-        <View style={[styles.leg, { backgroundColor: equipped.pants?.colors.primary ?? '#172A4A', borderColor: equipped.pants?.colors.secondary ?? colors.borderDim }]} />
+        <View style={[styles.leg, { backgroundColor: equipped.pants?.colors.primary ?? '#172A4A', borderColor: equipped.pants?.colors.secondary ?? colors.borderDim }]}>
+          <View style={[styles.legStripe, { backgroundColor: equipped.pants?.colors.accent ?? colors.primary }]} />
+        </View>
+        <View style={[styles.leg, { backgroundColor: equipped.pants?.colors.primary ?? '#172A4A', borderColor: equipped.pants?.colors.secondary ?? colors.borderDim }]}>
+          <View style={[styles.legStripe, { backgroundColor: equipped.pants?.colors.accent ?? colors.primary }]} />
+        </View>
       </View>
       <View style={styles.shoes}>
-        <View style={[styles.shoe, { backgroundColor: equipped.shoes?.colors.primary ?? colors.primary, borderColor: equipped.shoes?.colors.secondary ?? colors.white }]} />
-        <View style={[styles.shoe, { backgroundColor: equipped.shoes?.colors.primary ?? colors.primary, borderColor: equipped.shoes?.colors.secondary ?? colors.white }]} />
+        <View style={[styles.shoe, { backgroundColor: equipped.shoes?.colors.primary ?? colors.primary, borderColor: equipped.shoes?.colors.secondary ?? colors.white }]}>
+          <View style={styles.shoeSole} />
+        </View>
+        <View style={[styles.shoe, { backgroundColor: equipped.shoes?.colors.primary ?? colors.primary, borderColor: equipped.shoes?.colors.secondary ?? colors.white }]}>
+          <View style={styles.shoeSole} />
+        </View>
       </View>
       {equipped.accessory && <View style={[styles.accessory, { backgroundColor: equipped.accessory.colors.primary }]} />}
     </View>
@@ -104,14 +118,24 @@ const styles = StyleSheet.create({
   hairBack: {
     position: 'absolute',
     top: 26,
-    width: 92,
-    height: 92,
-    borderTopLeftRadius: 42,
-    borderTopRightRadius: 42,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    width: 100,
+    height: 104,
+    borderTopLeftRadius: 48,
+    borderTopRightRadius: 48,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
     backgroundColor: '#17213B',
     zIndex: 3
+  },
+  hairRibbon: {
+    position: 'absolute',
+    top: 92,
+    width: 92,
+    height: 34,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    backgroundColor: '#10182F',
+    zIndex: 2
   },
   head: {
     width: 70,
@@ -158,6 +182,17 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '-10deg' }],
     zIndex: 6
   },
+  hairShine: {
+    position: 'absolute',
+    top: 1,
+    left: 19,
+    width: 22,
+    height: 6,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    zIndex: 8,
+    transform: [{ rotate: '-12deg' }]
+  },
   eyeLeft: {
     position: 'absolute',
     top: 31,
@@ -175,6 +210,26 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 4,
     backgroundColor: '#0A1428'
+  },
+  eyeSparkLeft: {
+    position: 'absolute',
+    top: 33,
+    left: 21,
+    width: 3,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: colors.white,
+    zIndex: 8
+  },
+  eyeSparkRight: {
+    position: 'absolute',
+    top: 33,
+    right: 21,
+    width: 3,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: colors.white,
+    zIndex: 8
   },
   cheekLeft: {
     position: 'absolute',
@@ -227,11 +282,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center'
   },
+  collar: {
+    position: 'absolute',
+    top: 8,
+    width: 48,
+    height: 18,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    borderBottomWidth: 3,
+    borderColor: 'rgba(255, 255, 255, 0.45)'
+  },
   torsoPanel: {
     width: 48,
     height: 54,
     borderRadius: 18,
     opacity: 0.88
+  },
+  torsoHighlight: {
+    position: 'absolute',
+    top: 24,
+    right: 18,
+    width: 9,
+    height: 44,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)'
   },
   arm: {
     position: 'absolute',
@@ -268,7 +342,16 @@ const styles = StyleSheet.create({
     width: 36,
     height: 92,
     borderRadius: 15,
-    borderWidth: 2
+    borderWidth: 2,
+    overflow: 'hidden',
+    alignItems: 'center'
+  },
+  legStripe: {
+    width: 6,
+    height: '86%',
+    borderRadius: 5,
+    opacity: 0.35,
+    marginTop: 8
   },
   shoes: {
     flexDirection: 'row',
@@ -279,7 +362,17 @@ const styles = StyleSheet.create({
     width: 52,
     height: 22,
     borderRadius: radii.pill,
-    borderWidth: 2
+    borderWidth: 2,
+    overflow: 'hidden'
+  },
+  shoeSole: {
+    position: 'absolute',
+    left: 6,
+    right: 6,
+    bottom: 2,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.5)'
   },
   accessory: {
     position: 'absolute',
