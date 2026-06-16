@@ -2,7 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
 import { FitnessMap } from '@/components/FitnessMap';
 import { PrimaryButton } from '@/components/PrimaryButton';
@@ -455,41 +456,80 @@ const PostActivityModal = ({
   onLibrary: () => void;
   onClose: () => void;
 }) => (
-  <Modal visible={Boolean(activity)} transparent animationType="slide" onRequestClose={onClose}>
-    <View style={styles.modalBackdrop}>
-      {activity && (
-        <View style={styles.sheet}>
-          <View style={styles.sheetHeader}>
-            <View>
-              <AppText variant="caption" style={{ color: colors.success }}>
-                Activity saved
-              </AppText>
-              <AppText variant="title">Add a photo?</AppText>
+  <Modal visible={Boolean(activity)} animationType="slide" onRequestClose={onClose}>
+    <SafeAreaView style={styles.postSafeArea}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.postKeyboard}
+      >
+        {activity && (
+          <ScrollView
+            contentContainerStyle={styles.postScroll}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.postHeader}>
+              <View style={{ flex: 1 }}>
+                <AppText variant="caption" style={{ color: colors.success }}>
+                  Activity saved
+                </AppText>
+                <AppText variant="title">Add a photo?</AppText>
+              </View>
+              <Pressable onPress={onClose} style={styles.iconButton}>
+                <Ionicons name="close" size={22} color={colors.text} />
+              </Pressable>
             </View>
-            <Pressable onPress={onClose} style={styles.iconButton}>
-              <Ionicons name="close" size={22} color={colors.text} />
-            </Pressable>
-          </View>
-          {activity.photoUrl ? (
-            <Image source={{ uri: activity.photoUrl }} style={styles.postPhoto} />
-          ) : (
-            <View style={styles.photoPlaceholder}>
-              <Ionicons name="image-outline" size={34} color={colors.primary} />
-              <AppText muted>Attach a memory from this workout</AppText>
+
+            {activity.photoUrl ? (
+              <Image source={{ uri: activity.photoUrl }} style={styles.postPhoto} />
+            ) : (
+              <View style={styles.photoPlaceholder}>
+                <View style={styles.photoIconRing}>
+                  <Ionicons name="image-outline" size={38} color={colors.primary} />
+                </View>
+                <AppText variant="subtitle">No photo attached</AppText>
+                <AppText muted style={styles.photoHelpText}>
+                  Add a workout photo now, or finish without one.
+                </AppText>
+              </View>
+            )}
+
+            <View style={styles.summaryGrid}>
+              <SummaryCard label="Sport" value={ACTIVITY_LABELS[activity.type]} />
+              <SummaryCard label="Time" value={formatDuration(activity.durationSeconds)} />
+              <SummaryCard
+                label="Distance"
+                value={activity.distanceMeters ? formatDistance(activity.distanceMeters, units) : 'Manual'}
+              />
             </View>
-          )}
-          <View style={styles.summaryRow}>
-            <StatPill label="Sport" value={ACTIVITY_LABELS[activity.type]} />
-            <StatPill label="Time" value={formatDuration(activity.durationSeconds)} />
-            <StatPill label="Distance" value={activity.distanceMeters ? formatDistance(activity.distanceMeters, units) : 'Manual'} />
-          </View>
-          <PrimaryButton label={uploading ? 'Uploading...' : 'Take photo'} onPress={onCamera} disabled={uploading} />
-          <PrimaryButton label={uploading ? 'Uploading...' : 'Choose from library'} variant="secondary" onPress={onLibrary} disabled={uploading} />
-          <PrimaryButton label={activity.photoUrl ? 'Done' : 'Skip'} variant="secondary" onPress={onClose} disabled={uploading} />
-        </View>
-      )}
-    </View>
+
+            <View style={styles.postActions}>
+              <PrimaryButton label={uploading ? 'Uploading...' : 'Take photo'} onPress={onCamera} disabled={uploading} />
+              <PrimaryButton
+                label={uploading ? 'Uploading...' : 'Choose from library'}
+                variant="secondary"
+                onPress={onLibrary}
+                disabled={uploading}
+              />
+              <PrimaryButton label="Save activity / Finish" onPress={onClose} disabled={uploading} />
+              <PrimaryButton label={activity.photoUrl ? 'Done' : 'Skip'} variant="secondary" onPress={onClose} disabled={uploading} />
+            </View>
+          </ScrollView>
+        )}
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   </Modal>
+);
+
+const SummaryCard = ({ label, value }: { label: string; value: string }) => (
+  <View style={styles.summaryCard}>
+    <AppText variant="caption" muted>
+      {label}
+    </AppText>
+    <AppText style={styles.summaryValue} numberOfLines={1}>
+      {value}
+    </AppText>
+  </View>
 );
 
 const styles = StyleSheet.create({
@@ -659,24 +699,76 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     backgroundColor: colors.primarySoft
   },
+  postSafeArea: {
+    flex: 1,
+    backgroundColor: colors.background
+  },
+  postKeyboard: {
+    flex: 1
+  },
+  postScroll: {
+    flexGrow: 1,
+    padding: spacing.md,
+    gap: spacing.md,
+    paddingBottom: spacing.xl
+  },
+  postHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md
+  },
   photoPlaceholder: {
-    minHeight: 170,
+    minHeight: 300,
     borderRadius: radii.lg,
     borderWidth: 1,
-    borderColor: colors.borderDim,
+    borderColor: colors.border,
     backgroundColor: colors.black,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.sm
+    gap: spacing.sm,
+    padding: spacing.lg,
+    ...shadows.cyanGlow
+  },
+  photoIconRing: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  photoHelpText: {
+    textAlign: 'center'
   },
   postPhoto: {
     width: '100%',
-    height: 210,
+    minHeight: 320,
     borderRadius: radii.lg,
     backgroundColor: colors.black
   },
-  summaryRow: {
+  summaryGrid: {
     flexDirection: 'row',
     gap: spacing.sm
+  },
+  summaryCard: {
+    flex: 1,
+    minHeight: 76,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.card,
+    padding: spacing.sm,
+    justifyContent: 'center'
+  },
+  summaryValue: {
+    color: colors.text,
+    fontWeight: '900'
+  },
+  postActions: {
+    gap: spacing.sm,
+    paddingTop: spacing.xs
   }
 });
