@@ -12,7 +12,7 @@ import { TextField } from '@/components/TextField';
 import { ACTIVITY_LABELS, GPS_ACTIVITY_TYPES, MANUAL_ACTIVITY_TYPES, isGpsActivity } from '@/constants/activities';
 import { colors, radii, shadows, spacing } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
-import { saveActivity, updateActivityTitle, uploadActivityPhoto } from '@/services/activityService';
+import { saveActivity, updateActivityTitle, updateActivityType, uploadActivityPhoto } from '@/services/activityService';
 import { fallbackActivityTitle } from '@/services/mappers';
 import { getTodayMissions } from '@/services/missionService';
 import { ensureProfileAndCharacter } from '@/services/profileService';
@@ -46,6 +46,7 @@ export default function RecordScreen() {
   const [saving, setSaving] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [titleSaving, setTitleSaving] = useState(false);
+  const [sportSaving, setSportSaving] = useState(false);
   const [activityTitle, setActivityTitle] = useState('');
   const [savedActivity, setSavedActivity] = useState<Activity | null>(null);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
@@ -214,6 +215,21 @@ export default function RecordScreen() {
     }
   };
 
+  const correctSavedActivityType = async (type: ActivityType) => {
+    if (!savedActivity || savedActivity.type === type) return;
+
+    setSportSaving(true);
+    try {
+      const updated = await updateActivityType(savedActivity.id, type);
+      updateActivity(updated);
+      setSavedActivity(updated);
+    } catch (caught) {
+      Alert.alert('Could not update sport', caught instanceof Error ? caught.message : 'Try again.');
+    } finally {
+      setSportSaving(false);
+    }
+  };
+
   const closePostActivity = async () => {
     if (savedActivity) {
       const title = activityTitle.trim() || fallbackActivityTitle(savedActivity.type);
@@ -232,6 +248,7 @@ export default function RecordScreen() {
     setSavedActivity(null);
     setActivityTitle('');
     setTitleSaving(false);
+    setSportSaving(false);
     setElapsedSeconds(0);
     setDistanceMeters(0);
     setRoute([]);
@@ -334,7 +351,9 @@ export default function RecordScreen() {
         uploading={photoUploading}
         title={activityTitle}
         titleSaving={titleSaving}
+        sportSaving={sportSaving}
         onTitleChange={setActivityTitle}
+        onSportChange={correctSavedActivityType}
         onCamera={() => addPhoto('camera')}
         onLibrary={() => addPhoto('library')}
         onClose={closePostActivity}
@@ -470,7 +489,9 @@ const PostActivityModal = ({
   uploading,
   title,
   titleSaving,
+  sportSaving,
   onTitleChange,
+  onSportChange,
   onCamera,
   onLibrary,
   onClose
@@ -480,7 +501,9 @@ const PostActivityModal = ({
   uploading: boolean;
   title: string;
   titleSaving: boolean;
+  sportSaving: boolean;
   onTitleChange: (value: string) => void;
+  onSportChange: (type: ActivityType) => void;
   onCamera: () => void;
   onLibrary: () => void;
   onClose: () => void;
@@ -536,6 +559,42 @@ const PostActivityModal = ({
               />
             </View>
 
+            <View style={styles.postSportSection}>
+              <View style={styles.postSportHeader}>
+                <AppText variant="caption" style={{ color: colors.primary }}>
+                  Sport
+                </AppText>
+                {sportSaving && <AppText muted>Updating...</AppText>}
+              </View>
+              <View style={styles.postSportGrid}>
+                {[...GPS_ACTIVITY_TYPES, ...MANUAL_ACTIVITY_TYPES].map((type) => {
+                  const selected = activity.type === type;
+                  return (
+                    <Pressable
+                      key={type}
+                      onPress={() => onSportChange(type)}
+                      disabled={selected || uploading || titleSaving || sportSaving}
+                      style={({ pressed }) => [
+                        styles.postSportOption,
+                        selected && styles.postSportOptionActive,
+                        pressed && !selected && styles.pressed,
+                        (uploading || titleSaving || sportSaving) && !selected && styles.disabled
+                      ]}
+                    >
+                      <Ionicons
+                        name={isGpsActivity(type) ? 'navigate-outline' : 'barbell-outline'}
+                        size={18}
+                        color={selected ? colors.black : colors.primary}
+                      />
+                      <AppText style={[styles.postSportText, selected && styles.postSportTextActive]}>
+                        {ACTIVITY_LABELS[type]}
+                      </AppText>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+
             <View style={styles.summaryGrid}>
               <SummaryCard label="Sport" value={ACTIVITY_LABELS[activity.type]} />
               <SummaryCard label="Time" value={formatDuration(activity.durationSeconds)} />
@@ -546,15 +605,15 @@ const PostActivityModal = ({
             </View>
 
             <View style={styles.postActions}>
-              <PrimaryButton label={uploading ? 'Uploading...' : 'Take photo'} onPress={onCamera} disabled={uploading || titleSaving} />
+              <PrimaryButton label={uploading ? 'Uploading...' : 'Take photo'} onPress={onCamera} disabled={uploading || titleSaving || sportSaving} />
               <PrimaryButton
                 label={uploading ? 'Uploading...' : 'Choose from library'}
                 variant="secondary"
                 onPress={onLibrary}
-                disabled={uploading || titleSaving}
+                disabled={uploading || titleSaving || sportSaving}
               />
-              <PrimaryButton label={titleSaving ? 'Saving...' : 'Save activity / Finish'} onPress={onClose} disabled={uploading || titleSaving} />
-              <PrimaryButton label={activity.photoUrl ? 'Done' : 'Skip'} variant="secondary" onPress={onClose} disabled={uploading || titleSaving} />
+              <PrimaryButton label={titleSaving ? 'Saving...' : 'Save activity / Finish'} onPress={onClose} disabled={uploading || titleSaving || sportSaving} />
+              <PrimaryButton label={activity.photoUrl ? 'Done' : 'Skip'} variant="secondary" onPress={onClose} disabled={uploading || titleSaving || sportSaving} />
             </View>
           </ScrollView>
         )}
@@ -793,6 +852,44 @@ const styles = StyleSheet.create({
   },
   titleFieldGroup: {
     gap: spacing.xs
+  },
+  postSportSection: {
+    gap: spacing.sm
+  },
+  postSportHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  postSportGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs
+  },
+  postSportOption: {
+    width: '48.8%',
+    minHeight: 46,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.cardHigh,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm
+  },
+  postSportOptionActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary
+  },
+  postSportText: {
+    color: colors.text,
+    fontWeight: '800'
+  },
+  postSportTextActive: {
+    color: colors.black,
+    fontWeight: '900'
   },
   summaryGrid: {
     flexDirection: 'row',

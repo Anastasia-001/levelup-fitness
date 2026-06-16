@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { fallbackActivityTitle, mapActivity, mapCharacter, mapMission } from '@/services/mappers';
 import { getCharacter } from '@/services/profileService';
-import { Activity, ActivityInput, Character, Mission } from '@/types/domain';
+import { Activity, ActivityInput, ActivityType, Character, Mission } from '@/types/domain';
 import { applyExpToCharacter, calculateActivityExp, levelFromTotalExp } from '@/utils/exp';
 import { progressMissionWithActivity } from '@/utils/missions';
 import { todayKey } from '@/utils/format';
@@ -81,6 +81,20 @@ export const updateActivityTitle = async (activityId: string, title: string) => 
     .from('activities')
     .update({
       title
+    })
+    .eq('id', activityId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapActivity(data);
+};
+
+export const updateActivityType = async (activityId: string, type: ActivityType) => {
+  const { data, error } = await supabase
+    .from('activities')
+    .update({
+      type
     })
     .eq('id', activityId)
     .select()
