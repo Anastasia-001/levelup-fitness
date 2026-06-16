@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { mapActivity, mapCharacter, mapMission } from '@/services/mappers';
+import { fallbackActivityTitle, mapActivity, mapCharacter, mapMission } from '@/services/mappers';
 import { getCharacter } from '@/services/profileService';
 import { Activity, ActivityInput, Character, Mission } from '@/types/domain';
 import { applyExpToCharacter, calculateActivityExp, levelFromTotalExp } from '@/utils/exp';
@@ -47,6 +47,7 @@ export const saveActivity = async (userId: string, input: ActivityInput) => {
     .insert({
       user_id: userId,
       type: input.type,
+      title: input.title?.trim() || fallbackActivityTitle(input.type),
       started_at: startedAt,
       completed_at: completedAt,
       duration_seconds: Math.round(input.durationSeconds),
@@ -73,6 +74,20 @@ export const saveActivity = async (userId: string, input: ActivityInput) => {
   const character = await persistCharacter(afterMissions);
 
   return { activity, character, missions, expEarned: expEarned + bonusExp, bonusExp };
+};
+
+export const updateActivityTitle = async (activityId: string, title: string) => {
+  const { data, error } = await supabase
+    .from('activities')
+    .update({
+      title
+    })
+    .eq('id', activityId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return mapActivity(data);
 };
 
 export const updateActivityPhoto = async (

@@ -34,8 +34,11 @@ export const ActivityHistoryList = ({
             {activity.photoUrl && <Image source={{ uri: activity.photoUrl }} style={styles.photo} />}
             <View style={styles.activityTop}>
               <View style={{ flex: 1 }}>
-                <AppText variant="subtitle">{ACTIVITY_LABELS[activity.type]}</AppText>
+                <AppText variant="subtitle">{activity.title || ACTIVITY_LABELS[activity.type]}</AppText>
                 <AppText muted>{new Date(activity.completedAt).toLocaleString()}</AppText>
+                <AppText variant="caption" style={styles.activityType}>
+                  {ACTIVITY_LABELS[activity.type]}
+                </AppText>
               </View>
               <AppText style={styles.exp}>+{activity.expEarned} EXP</AppText>
             </View>
@@ -51,7 +54,10 @@ export const ActivityHistoryList = ({
           {selectedActivity && (
             <View style={styles.modalCard}>
               {selectedActivity.photoUrl && <Image source={{ uri: selectedActivity.photoUrl }} style={styles.detailPhoto} />}
-              <AppText variant="title">{ACTIVITY_LABELS[selectedActivity.type]}</AppText>
+              <AppText variant="title">{selectedActivity.title || ACTIVITY_LABELS[selectedActivity.type]}</AppText>
+              <AppText variant="caption" style={styles.activityType}>
+                {ACTIVITY_LABELS[selectedActivity.type]}
+              </AppText>
               <AppText muted>{new Date(selectedActivity.completedAt).toLocaleString()}</AppText>
               <View style={styles.activityMeta}>
                 <AppText>{formatDuration(selectedActivity.durationSeconds)}</AppText>
@@ -83,6 +89,10 @@ const styles = StyleSheet.create({
   exp: {
     color: colors.warning,
     fontWeight: '900'
+  },
+  activityType: {
+    color: colors.primary,
+    marginTop: spacing.xs
   },
   photo: {
     width: '100%',

@@ -18,6 +18,7 @@ export type RoutePoint = {
 
 export type ActivityInput = {
   type: ActivityType;
+  title?: string;
   durationSeconds: number;
   distanceMeters?: number;
   route?: RoutePoint[];
@@ -31,6 +32,7 @@ export type ActivityInput = {
 export type Activity = ActivityInput & {
   id: string;
   userId: string;
+  title: string;
   expEarned: number;
   statExp: Record<StatKey, number>;
   startedAt: string;
@@ -191,6 +193,7 @@ export type Database = {
           id: string;
           user_id: string;
           type: ActivityType;
+          title: string;
           started_at: string;
           completed_at: string;
           duration_seconds: number;
@@ -207,6 +210,7 @@ export type Database = {
         Insert: {
           user_id: string;
           type: ActivityType;
+          title: string;
           started_at: string;
           completed_at: string;
           duration_seconds: number;
@@ -222,6 +226,7 @@ export type Database = {
         };
         Update: {
           type?: ActivityType;
+          title?: string;
           started_at?: string;
           completed_at?: string;
           duration_seconds?: number;

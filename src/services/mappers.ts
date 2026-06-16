@@ -50,6 +50,7 @@ export const mapActivity = (row: {
   id: string;
   user_id: string;
   type: Activity['type'];
+  title: string | null;
   started_at: string;
   completed_at: string;
   duration_seconds: number;
@@ -66,6 +67,7 @@ export const mapActivity = (row: {
   id: row.id,
   userId: row.user_id,
   type: row.type,
+  title: row.title ?? fallbackActivityTitle(row.type),
   startedAt: row.started_at,
   completedAt: row.completed_at,
   durationSeconds: row.duration_seconds,
@@ -79,6 +81,13 @@ export const mapActivity = (row: {
   expEarned: row.exp_earned,
   statExp: row.stat_exp
 });
+
+export const fallbackActivityTitle = (type: Activity['type']) => {
+  if (type === 'run') return 'Run';
+  if (type === 'bike') return 'Bike ride';
+  if (type === 'walk') return 'Walk';
+  return 'Workout';
+};
 
 export const mapMission = (row: {
   id: string;

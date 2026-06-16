@@ -12,7 +12,8 @@ import { TextField } from '@/components/TextField';
 import { ACTIVITY_LABELS, GPS_ACTIVITY_TYPES, MANUAL_ACTIVITY_TYPES, isGpsActivity } from '@/constants/activities';
 import { colors, radii, shadows, spacing } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
-import { saveActivity, uploadActivityPhoto } from '@/services/activityService';
+import { saveActivity, updateActivityTitle, uploadActivityPhoto } from '@/services/activityService';
+import { fallbackActivityTitle } from '@/services/mappers';
 import { getTodayMissions } from '@/services/missionService';
 import { ensureProfileAndCharacter } from '@/services/profileService';
 import { useAppStore } from '@/store/appStore';
@@ -44,6 +45,8 @@ export default function RecordScreen() {
   const [weightKg, setWeightKg] = useState('');
   const [saving, setSaving] = useState(false);
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [titleSaving, setTitleSaving] = useState(false);
+  const [activityTitle, setActivityTitle] = useState('');
   const [savedActivity, setSavedActivity] = useState<Activity | null>(null);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
   const recordingStateRef = useRef<RecordingState>('idle');
@@ -167,6 +170,7 @@ export default function RecordScreen() {
       addActivity(result.activity);
       setCharacter(result.character);
       setMissions(result.missions.length ? result.missions : await getTodayMissions(userId));
+      setActivityTitle('');
       setSavedActivity(result.activity);
     } catch (caught) {
       Alert.alert('Could not save activity', caught instanceof Error ? caught.message : 'Try again.');
@@ -210,8 +214,24 @@ export default function RecordScreen() {
     }
   };
 
-  const closePostActivity = () => {
+  const closePostActivity = async () => {
+    if (savedActivity) {
+      const title = activityTitle.trim() || fallbackActivityTitle(savedActivity.type);
+      setTitleSaving(true);
+      try {
+        const updated = await updateActivityTitle(savedActivity.id, title);
+        updateActivity(updated);
+        setSavedActivity(updated);
+      } catch (caught) {
+        Alert.alert('Could not save title', caught instanceof Error ? caught.message : 'Try again.');
+        setTitleSaving(false);
+        return;
+      }
+    }
+
     setSavedActivity(null);
+    setActivityTitle('');
+    setTitleSaving(false);
     setElapsedSeconds(0);
     setDistanceMeters(0);
     setRoute([]);
@@ -312,6 +332,9 @@ export default function RecordScreen() {
         activity={savedActivity}
         units={units}
         uploading={photoUploading}
+        title={activityTitle}
+        titleSaving={titleSaving}
+        onTitleChange={setActivityTitle}
         onCamera={() => addPhoto('camera')}
         onLibrary={() => addPhoto('library')}
         onClose={closePostActivity}
@@ -445,6 +468,9 @@ const PostActivityModal = ({
   activity,
   units,
   uploading,
+  title,
+  titleSaving,
+  onTitleChange,
   onCamera,
   onLibrary,
   onClose
@@ -452,6 +478,9 @@ const PostActivityModal = ({
   activity: Activity | null;
   units: 'metric' | 'imperial';
   uploading: boolean;
+  title: string;
+  titleSaving: boolean;
+  onTitleChange: (value: string) => void;
   onCamera: () => void;
   onLibrary: () => void;
   onClose: () => void;
@@ -494,6 +523,19 @@ const PostActivityModal = ({
               </View>
             )}
 
+            <View style={styles.titleFieldGroup}>
+              <AppText variant="caption" style={{ color: colors.primary }}>
+                Title
+              </AppText>
+              <TextField
+                value={title}
+                onChangeText={onTitleChange}
+                placeholder="Give this activity a title"
+                returnKeyType="done"
+                editable={!titleSaving}
+              />
+            </View>
+
             <View style={styles.summaryGrid}>
               <SummaryCard label="Sport" value={ACTIVITY_LABELS[activity.type]} />
               <SummaryCard label="Time" value={formatDuration(activity.durationSeconds)} />
@@ -504,15 +546,15 @@ const PostActivityModal = ({
             </View>
 
             <View style={styles.postActions}>
-              <PrimaryButton label={uploading ? 'Uploading...' : 'Take photo'} onPress={onCamera} disabled={uploading} />
+              <PrimaryButton label={uploading ? 'Uploading...' : 'Take photo'} onPress={onCamera} disabled={uploading || titleSaving} />
               <PrimaryButton
                 label={uploading ? 'Uploading...' : 'Choose from library'}
                 variant="secondary"
                 onPress={onLibrary}
-                disabled={uploading}
+                disabled={uploading || titleSaving}
               />
-              <PrimaryButton label="Save activity / Finish" onPress={onClose} disabled={uploading} />
-              <PrimaryButton label={activity.photoUrl ? 'Done' : 'Skip'} variant="secondary" onPress={onClose} disabled={uploading} />
+              <PrimaryButton label={titleSaving ? 'Saving...' : 'Save activity / Finish'} onPress={onClose} disabled={uploading || titleSaving} />
+              <PrimaryButton label={activity.photoUrl ? 'Done' : 'Skip'} variant="secondary" onPress={onClose} disabled={uploading || titleSaving} />
             </View>
           </ScrollView>
         )}
@@ -748,6 +790,9 @@ const styles = StyleSheet.create({
     minHeight: 320,
     borderRadius: radii.lg,
     backgroundColor: colors.black
+  },
+  titleFieldGroup: {
+    gap: spacing.xs
   },
   summaryGrid: {
     flexDirection: 'row',
