@@ -35,7 +35,11 @@ export default function ShopScreen() {
   const grouped = useMemo(
     () =>
       sections
-        .map((section) => ({ section, items: SHOP_COSMETICS.filter((item) => item.shopSection === section) }))
+        .map((section) => ({
+          id: `shop-section-${section.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+          section,
+          items: SHOP_COSMETICS.filter((item) => item.shopSection === section)
+        }))
         .filter(({ items }) => items.length > 0),
     []
   );
@@ -80,8 +84,8 @@ export default function ShopScreen() {
         </View>
       </View>
 
-      {grouped.map(({ section, items }) => (
-        <View key={section} style={styles.section}>
+      {grouped.map(({ id, section, items }) => (
+        <View key={id} style={styles.section}>
           <View style={styles.sectionHeader}>
             <AppText variant="subtitle">{section}</AppText>
             <View style={styles.sectionLine} />

@@ -60,7 +60,7 @@ export default function MeScreen() {
         </View>
         <View style={styles.graph}>
           {weekly.map((day) => (
-            <View key={day.label} style={styles.barWrap}>
+            <View key={day.id} style={styles.barWrap}>
               <View style={[styles.bar, { height: Math.max(8, day.count * 22) }]} />
               <AppText variant="caption" muted>
                 {day.label}
@@ -225,6 +225,7 @@ const buildWeeklyBars = (activities: ReturnType<typeof useAppStore.getState>['ac
     const date = new Date(today);
     date.setDate(today.getDate() - (6 - index));
     return {
+      id: date.toDateString(),
       label: date.toLocaleString(undefined, { weekday: 'short' }).slice(0, 1),
       count: activities.filter((activity) => new Date(activity.completedAt).toDateString() === date.toDateString()).length
     };

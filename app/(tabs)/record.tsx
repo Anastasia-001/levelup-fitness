@@ -24,8 +24,8 @@ import { distanceBetweenMeters } from '@/utils/geo';
 type RecordingState = 'idle' | 'recording' | 'paused';
 
 const sportGroups = [
-  { title: 'GPS sports', items: GPS_ACTIVITY_TYPES },
-  { title: 'Manual workouts', items: MANUAL_ACTIVITY_TYPES }
+  { id: 'gps-sports', title: 'GPS sports', items: GPS_ACTIVITY_TYPES },
+  { id: 'manual-workouts', title: 'Manual workouts', items: MANUAL_ACTIVITY_TYPES }
 ] as const;
 
 export default function RecordScreen() {
@@ -403,7 +403,7 @@ const SportSelectorModal = ({
 }: {
   visible: boolean;
   search: string;
-  groups: { title: string; items: readonly ActivityType[] }[];
+  groups: { id: string; title: string; items: readonly ActivityType[] }[];
   selectedType: ActivityType;
   onSearch: (value: string) => void;
   onSelect: (type: ActivityType) => void;
@@ -427,7 +427,7 @@ const SportSelectorModal = ({
         <ScrollView contentContainerStyle={styles.sportList}>
           {groups.map((group) =>
             group.items.length ? (
-              <View key={group.title} style={styles.sportGroup}>
+              <View key={group.id} style={styles.sportGroup}>
                 <AppText variant="caption" style={{ color: colors.primary }}>
                   {group.title}
                 </AppText>
