@@ -48,6 +48,9 @@ export default function RecordScreen() {
   const [titleSaving, setTitleSaving] = useState(false);
   const [sportSaving, setSportSaving] = useState(false);
   const [activityTitle, setActivityTitle] = useState('');
+  const [photoPreviewUri, setPhotoPreviewUri] = useState<string | null>(null);
+  const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
+  const [photoRenderFailed, setPhotoRenderFailed] = useState(false);
   const [savedActivity, setSavedActivity] = useState<Activity | null>(null);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
   const recordingStateRef = useRef<RecordingState>('idle');
@@ -194,22 +197,33 @@ export default function RecordScreen() {
 
     const result =
       source === 'camera'
-        ? await ImagePicker.launchCameraAsync({ allowsEditing: true, quality: 0.82 })
+        ? await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            base64: true,
+            quality: 0.82
+          })
         : await ImagePicker.launchImageLibraryAsync({
             allowsEditing: true,
+            base64: true,
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             quality: 0.82
           });
 
-    if (result.canceled || !result.assets[0]?.uri) return;
+    const asset = result.canceled ? null : result.assets[0];
+    if (!asset?.uri) return;
 
+    setPhotoPreviewUri(asset.uri);
+    setPhotoUploadError(null);
+    setPhotoRenderFailed(false);
     setPhotoUploading(true);
     try {
-      const updated = await uploadActivityPhoto(userId, savedActivity.id, result.assets[0].uri);
+      const updated = await uploadActivityPhoto(userId, savedActivity.id, asset);
       updateActivity(updated);
       setSavedActivity(updated);
     } catch (caught) {
-      Alert.alert('Photo upload failed', caught instanceof Error ? caught.message : 'Try again.');
+      const message = caught instanceof Error ? caught.message : 'Try again.';
+      setPhotoUploadError(message);
+      Alert.alert('Photo upload failed', message);
     } finally {
       setPhotoUploading(false);
     }
@@ -247,6 +261,9 @@ export default function RecordScreen() {
 
     setSavedActivity(null);
     setActivityTitle('');
+    setPhotoPreviewUri(null);
+    setPhotoUploadError(null);
+    setPhotoRenderFailed(false);
     setTitleSaving(false);
     setSportSaving(false);
     setElapsedSeconds(0);
@@ -352,8 +369,12 @@ export default function RecordScreen() {
         title={activityTitle}
         titleSaving={titleSaving}
         sportSaving={sportSaving}
+        photoPreviewUri={photoPreviewUri}
+        photoUploadError={photoUploadError}
+        photoRenderFailed={photoRenderFailed}
         onTitleChange={setActivityTitle}
         onSportChange={correctSavedActivityType}
+        onPhotoRenderError={() => setPhotoRenderFailed(true)}
         onCamera={() => addPhoto('camera')}
         onLibrary={() => addPhoto('library')}
         onClose={closePostActivity}
@@ -490,8 +511,12 @@ const PostActivityModal = ({
   title,
   titleSaving,
   sportSaving,
+  photoPreviewUri,
+  photoUploadError,
+  photoRenderFailed,
   onTitleChange,
   onSportChange,
+  onPhotoRenderError,
   onCamera,
   onLibrary,
   onClose
@@ -502,49 +527,69 @@ const PostActivityModal = ({
   title: string;
   titleSaving: boolean;
   sportSaving: boolean;
+  photoPreviewUri: string | null;
+  photoUploadError: string | null;
+  photoRenderFailed: boolean;
   onTitleChange: (value: string) => void;
   onSportChange: (type: ActivityType) => void;
+  onPhotoRenderError: () => void;
   onCamera: () => void;
   onLibrary: () => void;
   onClose: () => void;
-}) => (
-  <Modal visible={Boolean(activity)} animationType="slide" onRequestClose={onClose}>
-    <SafeAreaView style={styles.postSafeArea}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.postKeyboard}
-      >
-        {activity && (
-          <ScrollView
-            contentContainerStyle={styles.postScroll}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            <View style={styles.postHeader}>
-              <View style={{ flex: 1 }}>
-                <AppText variant="caption" style={{ color: colors.success }}>
-                  Activity saved
-                </AppText>
-                <AppText variant="title">Add a photo?</AppText>
-              </View>
-              <Pressable onPress={onClose} style={styles.iconButton}>
-                <Ionicons name="close" size={22} color={colors.text} />
-              </Pressable>
-            </View>
+}) => {
+  const photoUri = photoPreviewUri || activity?.photoUrl;
 
-            {activity.photoUrl ? (
-              <Image source={{ uri: activity.photoUrl }} style={styles.postPhoto} />
-            ) : (
-              <View style={styles.photoPlaceholder}>
-                <View style={styles.photoIconRing}>
-                  <Ionicons name="image-outline" size={38} color={colors.primary} />
+  return (
+    <Modal visible={Boolean(activity)} animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView style={styles.postSafeArea}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.postKeyboard}
+        >
+          {activity && (
+            <ScrollView
+              contentContainerStyle={styles.postScroll}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.postHeader}>
+                <View style={{ flex: 1 }}>
+                  <AppText variant="caption" style={{ color: colors.success }}>
+                    Activity saved
+                  </AppText>
+                  <AppText variant="title">Add a photo?</AppText>
                 </View>
-                <AppText variant="subtitle">No photo attached</AppText>
-                <AppText muted style={styles.photoHelpText}>
-                  Add a workout photo now, or finish without one.
-                </AppText>
+                <Pressable onPress={onClose} style={styles.iconButton}>
+                  <Ionicons name="close" size={22} color={colors.text} />
+                </Pressable>
               </View>
-            )}
+
+              {photoUri && !photoRenderFailed ? (
+                <Image
+                  source={{ uri: photoUri }}
+                  style={styles.postPhoto}
+                  resizeMode="cover"
+                  onError={onPhotoRenderError}
+                />
+              ) : (
+                <View style={styles.photoPlaceholder}>
+                  <View style={styles.photoIconRing}>
+                    <Ionicons name="image-outline" size={38} color={colors.primary} />
+                  </View>
+                  <AppText variant="subtitle">{photoRenderFailed ? 'Photo could not be previewed' : 'No photo attached'}</AppText>
+                  <AppText muted style={styles.photoHelpText}>
+                    {photoRenderFailed
+                      ? 'Choose another image or try taking a new photo.'
+                      : 'Add a workout photo now, or finish without one.'}
+                  </AppText>
+                </View>
+              )}
+              {photoUploadError && (
+                <View style={styles.photoError}>
+                  <Ionicons name="warning-outline" size={18} color={colors.warning} />
+                  <AppText style={styles.photoErrorText}>{photoUploadError}</AppText>
+                </View>
+              )}
 
             <View style={styles.titleFieldGroup}>
               <AppText variant="caption" style={{ color: colors.primary }}>
@@ -615,12 +660,13 @@ const PostActivityModal = ({
               <PrimaryButton label={titleSaving ? 'Saving...' : 'Save activity / Finish'} onPress={onClose} disabled={uploading || titleSaving || sportSaving} />
               <PrimaryButton label={activity.photoUrl ? 'Done' : 'Skip'} variant="secondary" onPress={onClose} disabled={uploading || titleSaving || sportSaving} />
             </View>
-          </ScrollView>
-        )}
-      </KeyboardAvoidingView>
-    </SafeAreaView>
-  </Modal>
-);
+            </ScrollView>
+          )}
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </Modal>
+  );
+};
 
 const SummaryCard = ({ label, value }: { label: string; value: string }) => (
   <View style={styles.summaryCard}>
@@ -844,11 +890,27 @@ const styles = StyleSheet.create({
   photoHelpText: {
     textAlign: 'center'
   },
+  photoError: {
+    minHeight: 46,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    backgroundColor: 'rgba(255, 184, 77, 0.12)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md
+  },
+  photoErrorText: {
+    flex: 1,
+    color: colors.warning,
+    fontWeight: '700'
+  },
   postPhoto: {
     width: '100%',
     minHeight: 320,
     borderRadius: radii.lg,
-    backgroundColor: colors.black
+    backgroundColor: colors.cardHigh
   },
   titleFieldGroup: {
     gap: spacing.xs

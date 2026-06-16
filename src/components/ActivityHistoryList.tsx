@@ -1,5 +1,5 @@
 import { Image, Modal, Pressable, StyleSheet, View } from 'react-native';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { AppText } from '@/components/AppText';
 import { Card } from '@/components/Card';
@@ -31,7 +31,7 @@ export const ActivityHistoryList = ({
       {activities.map((activity) => (
         <Pressable key={activity.id} onPress={() => setSelectedActivity(activity)}>
           <Card>
-            {activity.photoUrl && <Image source={{ uri: activity.photoUrl }} style={styles.photo} />}
+            {activity.photoUrl && <ActivityPhoto uri={activity.photoUrl} />}
             <View style={styles.activityTop}>
               <View style={{ flex: 1 }}>
                 <AppText variant="subtitle">{activity.title || ACTIVITY_LABELS[activity.type]}</AppText>
@@ -53,7 +53,7 @@ export const ActivityHistoryList = ({
         <View style={styles.modalBackdrop}>
           {selectedActivity && (
             <View style={styles.modalCard}>
-              {selectedActivity.photoUrl && <Image source={{ uri: selectedActivity.photoUrl }} style={styles.detailPhoto} />}
+              {selectedActivity.photoUrl && <ActivityPhoto uri={selectedActivity.photoUrl} large />}
               <AppText variant="title">{selectedActivity.title || ACTIVITY_LABELS[selectedActivity.type]}</AppText>
               <AppText variant="caption" style={styles.activityType}>
                 {ACTIVITY_LABELS[selectedActivity.type]}
@@ -70,6 +70,33 @@ export const ActivityHistoryList = ({
         </View>
       </Modal>
     </View>
+  );
+};
+
+const ActivityPhoto = ({ uri, large = false }: { uri: string; large?: boolean }) => {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [uri]);
+
+  if (failed) {
+    return (
+      <View style={[styles.photoPlaceholder, large && styles.detailPhoto]}>
+        <AppText variant="caption" style={styles.photoPlaceholderText}>
+          Photo unavailable
+        </AppText>
+      </View>
+    );
+  }
+
+  return (
+    <Image
+      source={{ uri }}
+      style={[styles.photo, large && styles.detailPhoto]}
+      resizeMode="cover"
+      onError={() => setFailed(true)}
+    />
   );
 };
 
@@ -98,7 +125,20 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 150,
     borderRadius: 16,
-    backgroundColor: colors.black
+    backgroundColor: colors.cardHigh
+  },
+  photoPlaceholder: {
+    width: '100%',
+    height: 150,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.cardHigh,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  photoPlaceholderText: {
+    color: colors.primary
   },
   modalBackdrop: {
     flex: 1,
@@ -118,6 +158,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 220,
     borderRadius: 18,
-    backgroundColor: colors.black
+    backgroundColor: colors.cardHigh
   }
 });

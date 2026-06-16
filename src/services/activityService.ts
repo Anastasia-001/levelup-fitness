@@ -6,6 +6,13 @@ import { applyExpToCharacter, calculateActivityExp, levelFromTotalExp } from '@/
 import { progressMissionWithActivity } from '@/utils/missions';
 import { todayKey } from '@/utils/format';
 
+type PickedActivityPhoto = {
+  uri: string;
+  base64?: string | null;
+  mimeType?: string | null;
+  fileName?: string | null;
+};
+
 const persistCharacter = async (character: Character) => {
   const { data, error } = await supabase
     .from('characters')
@@ -125,24 +132,102 @@ export const updateActivityPhoto = async (
 export const uploadActivityPhoto = async (
   userId: string,
   activityId: string,
-  uri: string
+  photo: PickedActivityPhoto
 ) => {
-  const response = await fetch(uri);
-  const blob = await response.blob();
-  const extension = uri.split('.').pop()?.split('?')[0] || 'jpg';
+  const uploadBody = photo.base64
+    ? base64ToArrayBuffer(photo.base64)
+    : await localUriToArrayBuffer(photo.uri);
+  const contentType = photo.mimeType || contentTypeFromUri(photo.uri);
+  const extension = extensionForPhoto(photo, contentType);
   const path = `${userId}/${activityId}-${Date.now()}.${extension}`;
+
+  if (uploadBody.byteLength === 0) {
+    throw new Error('The selected photo could not be read.');
+  }
 
   const { error } = await supabase.storage
     .from('activity-photos')
-    .upload(path, blob, {
-      contentType: blob.type || 'image/jpeg',
+    .upload(path, uploadBody, {
+      contentType,
+      cacheControl: '3600',
       upsert: true
     });
 
   if (error) throw error;
 
   const { data } = supabase.storage.from('activity-photos').getPublicUrl(path);
+  if (!data.publicUrl) {
+    throw new Error('Photo uploaded, but no public URL was returned.');
+  }
+
   return updateActivityPhoto(activityId, { photoUrl: data.publicUrl, photoPath: path });
+};
+
+const localUriToArrayBuffer = async (uri: string) => {
+  const response = await fetch(uri);
+  if (!response.ok && !uri.startsWith('file:') && !uri.startsWith('content:')) {
+    throw new Error('The selected photo could not be loaded.');
+  }
+  return response.arrayBuffer();
+};
+
+const base64ToArrayBuffer = (base64: string) => {
+  const clean = base64.replace(/^data:.*;base64,/, '').replace(/\s/g, '');
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const padding = clean.endsWith('==') ? 2 : clean.endsWith('=') ? 1 : 0;
+  const byteLength = Math.floor((clean.length * 3) / 4) - padding;
+  const bytes = new Uint8Array(byteLength);
+  let byteIndex = 0;
+
+  for (let index = 0; index < clean.length; index += 4) {
+    const first = alphabet.indexOf(clean[index]);
+    const second = alphabet.indexOf(clean[index + 1]);
+    const third = clean[index + 2] === '=' ? 64 : alphabet.indexOf(clean[index + 2]);
+    const fourth = clean[index + 3] === '=' ? 64 : alphabet.indexOf(clean[index + 3]);
+
+    if (first < 0 || second < 0 || third < 0 || fourth < 0) {
+      throw new Error('The selected photo data is invalid.');
+    }
+
+    const chunk =
+      (first << 18) |
+      (second << 12) |
+      ((third & 63) << 6) |
+      (fourth & 63);
+
+    if (byteIndex < byteLength) bytes[byteIndex] = (chunk >> 16) & 255;
+    byteIndex += 1;
+    if (byteIndex < byteLength) bytes[byteIndex] = (chunk >> 8) & 255;
+    byteIndex += 1;
+    if (byteIndex < byteLength) bytes[byteIndex] = chunk & 255;
+    byteIndex += 1;
+  }
+
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+};
+
+const contentTypeFromUri = (uri: string) => {
+  const extension = extensionFromName(uri);
+  if (extension === 'png') return 'image/png';
+  if (extension === 'webp') return 'image/webp';
+  if (extension === 'heic') return 'image/heic';
+  return 'image/jpeg';
+};
+
+const extensionForPhoto = (photo: PickedActivityPhoto, contentType: string) => {
+  const fromName = extensionFromName(photo.fileName) || extensionFromName(photo.uri);
+  if (fromName) return fromName;
+  if (contentType.includes('png')) return 'png';
+  if (contentType.includes('webp')) return 'webp';
+  if (contentType.includes('heic')) return 'heic';
+  return 'jpg';
+};
+
+const extensionFromName = (value?: string | null) => {
+  const extension = value?.split('?')[0]?.split('.').pop()?.toLowerCase();
+  if (!extension || extension === value || extension.length > 5) return null;
+  if (extension === 'jpeg') return 'jpg';
+  return extension.replace(/[^a-z0-9]/g, '');
 };
 
 const applyMissionBonus = (character: Character, bonusExp: number): Character => {
