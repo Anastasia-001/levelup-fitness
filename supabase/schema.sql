@@ -47,6 +47,7 @@ create table public.activities (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   type public.activity_type not null,
+  title text not null,
   started_at timestamptz not null,
   completed_at timestamptz not null default now(),
   duration_seconds integer not null check (duration_seconds > 0),

@@ -152,13 +152,16 @@ export default function RecordScreen() {
   };
 
   const saveManualWorkout = async () => {
-    await saveWorkout({
+    const saved = await saveWorkout({
       type: selectedType,
       durationSeconds: Math.max(1, Number(durationMinutes || 0)) * 60,
       sets: sets ? Number(sets) : undefined,
       reps: reps ? Number(reps) : undefined,
       weightKg: weightKg ? Number(weightKg) : undefined
     });
+
+    if (!saved) return;
+
     setDurationMinutes('');
     setSets('');
     setReps('');
@@ -167,17 +170,40 @@ export default function RecordScreen() {
   };
 
   const saveWorkout = async (input: Parameters<typeof saveActivity>[1]) => {
-    if (!userId) return;
+    if (!userId) {
+      Alert.alert('Could not save activity', 'You need to be logged in before saving an activity.');
+      return false;
+    }
+
     setSaving(true);
     try {
       const result = await saveActivity(userId, input);
       addActivity(result.activity);
-      setCharacter(result.character);
-      setMissions(result.missions.length ? result.missions : await getTodayMissions(userId));
+      if (result.character) {
+        setCharacter(result.character);
+      }
+
+      try {
+        if (result.missions.length) {
+          setMissions(result.missions);
+        } else {
+          setMissions(await getTodayMissions(userId));
+        }
+      } catch (caught) {
+        logRecordSaveError('refresh-missions-after-save', input, caught);
+      }
+
+      if (result.sideEffectError && __DEV__) {
+        console.warn('[LevelUp] Activity saved, but a post-save side effect failed.', result.sideEffectError);
+      }
+
       setActivityTitle('');
       setSavedActivity(result.activity);
+      return true;
     } catch (caught) {
-      Alert.alert('Could not save activity', caught instanceof Error ? caught.message : 'Try again.');
+      logRecordSaveError('save-workout', input, caught);
+      Alert.alert('Could not save activity', activitySaveErrorMessage(caught));
+      return false;
     } finally {
       setSaving(false);
     }
@@ -249,10 +275,11 @@ export default function RecordScreen() {
       const title = activityTitle.trim() || fallbackActivityTitle(savedActivity.type);
       setTitleSaving(true);
       try {
-        const updated = await updateActivityTitle(savedActivity.id, title);
+        const updated = await updateActivityTitle(savedActivity.id, title, savedActivity);
         updateActivity(updated);
         setSavedActivity(updated);
       } catch (caught) {
+        logRecordSaveError('finish-activity-title', { activityId: savedActivity.id, title }, caught);
         Alert.alert('Could not save title', caught instanceof Error ? caught.message : 'Try again.');
         setTitleSaving(false);
         return;
@@ -382,6 +409,58 @@ export default function RecordScreen() {
     </Screen>
   );
 }
+
+const activitySaveErrorMessage = (caught: unknown) => {
+  const message = errorMessage(caught);
+
+  if (/row-level security|rls/i.test(message)) {
+    return 'Supabase blocked this save. Check that the activities table allows authenticated users to insert their own rows.';
+  }
+
+  if (/could not find|schema cache|column|42703|pgrst204/i.test(message)) {
+    return 'Your Supabase activities table is missing a field used by the app. Run the latest migrations and try again.';
+  }
+
+  return message || 'Check your connection and try again.';
+};
+
+const errorMessage = (caught: unknown) => {
+  if (caught instanceof Error) return caught.message;
+  if (typeof caught === 'string') return caught;
+  if (caught && typeof caught === 'object' && 'message' in caught) {
+    return String((caught as { message?: unknown }).message ?? '');
+  }
+  return '';
+};
+
+const serializeError = (caught: unknown) => {
+  if (caught instanceof Error) {
+    return { name: caught.name, message: caught.message, stack: caught.stack };
+  }
+
+  if (!caught || typeof caught !== 'object') {
+    return { message: String(caught) };
+  }
+
+  const value = caught as Record<string, unknown>;
+  return {
+    code: value.code,
+    message: value.message,
+    details: value.details,
+    hint: value.hint,
+    status: value.status,
+    raw: value
+  };
+};
+
+const logRecordSaveError = (stage: string, payload: unknown, caught: unknown) => {
+  if (!__DEV__) return;
+  console.error('[LevelUp] Record save flow error', {
+    stage,
+    payload,
+    error: serializeError(caught)
+  });
+};
 
 const StatPill = ({ label, value }: { label: string; value: string }) => (
   <View style={styles.statPill}>
