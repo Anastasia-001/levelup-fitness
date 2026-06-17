@@ -75,6 +75,60 @@ npm run ios
 npm run android
 ```
 
+## Development Build For Background GPS
+
+Expo Go can test the app UI and simple foreground location flows, but true background GPS tracking requires a development build or native build. The app uses `expo-dev-client`, `expo-location`, and `expo-task-manager` so the native background location permissions and foreground service can be included in the installed app.
+
+Install dependencies and EAS CLI:
+
+```bash
+npm install
+npm install --global eas-cli
+```
+
+Log in to Expo/EAS:
+
+```bash
+eas login
+eas whoami
+```
+
+If this is your first EAS build for the project, let EAS connect the project when prompted:
+
+```bash
+eas build:configure
+```
+
+Create a development build:
+
+```bash
+eas build --platform android --profile development
+eas build --platform ios --profile development
+```
+
+For iOS Simulator testing on macOS, use:
+
+```bash
+eas build --platform ios --profile development-simulator
+```
+
+After installing the development build on your device, start the dev server for that build:
+
+```bash
+npx expo start --dev-client
+```
+
+Testing background GPS:
+
+1. Open the installed LevelUp Fitness development build.
+2. Log in and start Run, Walk, Bike, or Hike.
+3. Grant foreground and background location permissions.
+4. Lock the screen, wait or move for several minutes, then reopen the app.
+5. Stop and save the activity.
+6. Verify elapsed time and route points continued while the screen was locked.
+
+Android development builds can be installed from the EAS build link or QR code. Physical iPhone device builds through EAS require Apple Developer signing access; iOS Simulator builds require macOS and the iOS Simulator.
+
 ## Test The App
 
 1. Sign up with email, password, and username.

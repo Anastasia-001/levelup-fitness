@@ -26,6 +26,7 @@
       "expo-image-picker"
     ],
     "ios": {
+      "bundleIdentifier": "com.anastasia001.levelupfitness",
       "supportsTablet": false,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "LevelUp Fitness uses location to record GPS workouts and calculate distance.",
@@ -39,6 +40,7 @@
       }
     },
     "android": {
+      "package": "com.anastasia001.levelupfitness",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
