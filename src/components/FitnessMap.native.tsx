@@ -10,6 +10,7 @@ type FitnessMapProps = {
 
 export const FitnessMap = ({ route, currentPoint }: FitnessMapProps) => {
   const last = route[route.length - 1] ?? currentPoint;
+  const routeSegments = splitRouteSegments(route);
   const region = {
     latitude: last?.latitude ?? 37.78825,
     longitude: last?.longitude ?? -122.4324,
@@ -25,7 +26,14 @@ export const FitnessMap = ({ route, currentPoint }: FitnessMapProps) => {
       showsCompass={false}
       toolbarEnabled={false}
     >
-      {route.length > 1 && <Polyline coordinates={route} strokeColor={colors.route} strokeWidth={5} />}
+      {routeSegments.map((segment) => (
+        <Polyline
+          key={`route-segment-${segment[0]?.segmentId ?? 0}-${segment[0]?.timestamp ?? 0}`}
+          coordinates={segment}
+          strokeColor={colors.route}
+          strokeWidth={5}
+        />
+      ))}
       {currentPoint && (
         <Marker coordinate={currentPoint} anchor={{ x: 0.5, y: 0.5 }}>
           <View style={styles.markerOuter}>
@@ -36,6 +44,27 @@ export const FitnessMap = ({ route, currentPoint }: FitnessMapProps) => {
       )}
     </MapView>
   );
+};
+
+const splitRouteSegments = (route: RoutePoint[]) => {
+  const segments: RoutePoint[][] = [];
+
+  route.forEach((point) => {
+    const previousSegment = segments[segments.length - 1];
+    const previousPoint = previousSegment?.[previousSegment.length - 1];
+    const startsNewSegment =
+      !previousSegment ||
+      previousPoint?.segmentId !== point.segmentId;
+
+    if (startsNewSegment) {
+      segments.push([point]);
+      return;
+    }
+
+    previousSegment.push(point);
+  });
+
+  return segments.filter((segment) => segment.length > 1);
 };
 
 const styles = StyleSheet.create({

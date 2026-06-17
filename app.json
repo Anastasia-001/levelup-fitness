@@ -11,7 +11,17 @@
     ],
     "plugins": [
       "expo-router",
-      "expo-location",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "LevelUp Fitness uses location to record GPS workouts, distance, pace, and route maps.",
+          "locationAlwaysAndWhenInUsePermission": "LevelUp Fitness uses background location to keep recording active workouts when the screen is locked.",
+          "locationAlwaysPermission": "LevelUp Fitness uses background location to keep recording active workouts when the screen is locked.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
       "expo-font",
       "expo-image-picker"
     ],
@@ -19,6 +29,11 @@
       "supportsTablet": false,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "LevelUp Fitness uses location to record GPS workouts and calculate distance.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "LevelUp Fitness uses background location to keep recording active workouts when the screen is locked.",
+        "NSLocationAlwaysUsageDescription": "LevelUp Fitness uses background location to keep recording active workouts when the screen is locked.",
+        "UIBackgroundModes": [
+          "location"
+        ],
         "NSCameraUsageDescription": "LevelUp Fitness lets you attach a photo to a completed activity.",
         "NSPhotoLibraryUsageDescription": "LevelUp Fitness lets you choose a photo for a completed activity."
       }
@@ -26,7 +41,10 @@
     "android": {
       "permissions": [
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
       ]
     },
     "extra": {

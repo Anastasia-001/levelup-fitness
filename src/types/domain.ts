@@ -13,12 +13,16 @@ export type RoutePoint = {
   longitude: number;
   altitude?: number | null;
   accuracy?: number | null;
+  speed?: number | null;
+  segmentId?: number;
   timestamp: number;
 };
 
 export type ActivityInput = {
   type: ActivityType;
   title?: string;
+  startedAt?: string;
+  completedAt?: string;
   durationSeconds: number;
   distanceMeters?: number;
   route?: RoutePoint[];

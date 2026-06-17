@@ -1,8 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import * as Location from 'expo-location';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import type { LocationSubscription } from 'expo-location';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, AppState, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
 import { FitnessMap } from '@/components/FitnessMap';
@@ -13,13 +13,21 @@ import { ACTIVITY_LABELS, GPS_ACTIVITY_TYPES, MANUAL_ACTIVITY_TYPES, isGpsActivi
 import { colors, radii, shadows, spacing } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { saveActivity, updateActivityTitle, updateActivityType, uploadActivityPhoto } from '@/services/activityService';
+import {
+  clearQueuedBackgroundPoints,
+  consumeQueuedBackgroundPoints,
+  evaluateRoutePoint,
+  requestGpsPermissions,
+  startBackgroundLocationUpdates,
+  startForegroundLocationUpdates,
+  stopBackgroundLocationUpdates
+} from '@/services/gpsTracking';
 import { fallbackActivityTitle } from '@/services/mappers';
 import { getTodayMissions } from '@/services/missionService';
 import { ensureProfileAndCharacter } from '@/services/profileService';
 import { useAppStore } from '@/store/appStore';
 import { Activity, ActivityType, RoutePoint } from '@/types/domain';
 import { formatDistance, formatDuration, formatPace } from '@/utils/format';
-import { distanceBetweenMeters } from '@/utils/geo';
 
 type RecordingState = 'idle' | 'recording' | 'paused';
 
@@ -51,15 +59,33 @@ export default function RecordScreen() {
   const [photoPreviewUri, setPhotoPreviewUri] = useState<string | null>(null);
   const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
   const [photoRenderFailed, setPhotoRenderFailed] = useState(false);
+  const [backgroundTrackingActive, setBackgroundTrackingActive] = useState(false);
+  const [backgroundTrackingWarning, setBackgroundTrackingWarning] = useState<string | null>(null);
   const [savedActivity, setSavedActivity] = useState<Activity | null>(null);
-  const watchRef = useRef<Location.LocationSubscription | null>(null);
+  const watchRef = useRef<LocationSubscription | null>(null);
   const recordingStateRef = useRef<RecordingState>('idle');
+  const selectedTypeRef = useRef<ActivityType>('run');
+  const startedAtMsRef = useRef<number | null>(null);
+  const pausedAtMsRef = useRef<number | null>(null);
+  const pausedDurationMsRef = useRef(0);
+  const routeRef = useRef<RoutePoint[]>([]);
+  const distanceMetersRef = useRef(0);
+  const segmentIdRef = useRef(0);
+  const backgroundTrackingAllowedRef = useRef(false);
+  const forceNextSegmentRef = useRef(false);
+  const appStateRef = useRef(AppState.currentState);
   const addActivity = useAppStore((state) => state.addActivity);
   const updateActivity = useAppStore((state) => state.updateActivity);
   const setCharacter = useAppStore((state) => state.setCharacter);
   const setMissions = useAppStore((state) => state.setMissions);
   const units = useAppStore((state) => state.profile?.unitPreference ?? 'metric');
   const selectedIsGps = isGpsActivity(selectedType);
+
+  const calculateElapsedSeconds = useCallback((now = Date.now()) => {
+    if (!startedAtMsRef.current) return 0;
+    const end = recordingStateRef.current === 'paused' && pausedAtMsRef.current ? pausedAtMsRef.current : now;
+    return Math.max(0, Math.floor((end - startedAtMsRef.current - pausedDurationMsRef.current) / 1000));
+  }, []);
 
   const visibleSportGroups = useMemo(() => {
     const query = sportSearch.trim().toLowerCase();
@@ -68,6 +94,45 @@ export default function RecordScreen() {
       items: group.items.filter((type) => ACTIVITY_LABELS[type].toLowerCase().includes(query))
     }));
   }, [sportSearch]);
+
+  const appendRoutePoint = useCallback((point: RoutePoint, forceNewSegment = false) => {
+    if (recordingStateRef.current !== 'recording') return;
+
+    const result = evaluateRoutePoint({
+      point,
+      lastPoint: routeRef.current[routeRef.current.length - 1],
+      activityType: selectedTypeRef.current,
+      segmentId: segmentIdRef.current,
+      forceNewSegment: forceNewSegment || forceNextSegmentRef.current
+    });
+
+    if (!result.accepted || !result.point) {
+      if (__DEV__ && result.reason && result.reason !== 'duplicate-point') {
+        console.log('[LevelUp] Ignored GPS point', result.reason);
+      }
+      return;
+    }
+
+    forceNextSegmentRef.current = false;
+    segmentIdRef.current = result.segmentId;
+    const nextRoute = [...routeRef.current, result.point];
+    const nextDistance = distanceMetersRef.current + result.distanceDelta;
+
+    routeRef.current = nextRoute;
+    distanceMetersRef.current = nextDistance;
+    setRoute(nextRoute);
+    setDistanceMeters(nextDistance);
+    setCurrentPoint(result.point);
+  }, []);
+
+  const mergeQueuedBackgroundRoutePoints = useCallback(async () => {
+    const points = await consumeQueuedBackgroundPoints();
+    if (!points.length) return;
+
+    points
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .forEach((point) => appendRoutePoint(point));
+  }, [appendRoutePoint]);
 
   useEffect(() => {
     supabase.auth.getUser().then(async ({ data }) => {
@@ -82,6 +147,7 @@ export default function RecordScreen() {
 
     return () => {
       watchRef.current?.remove();
+      void stopBackgroundLocationUpdates();
     };
   }, []);
 
@@ -90,65 +156,167 @@ export default function RecordScreen() {
   }, [recordingState]);
 
   useEffect(() => {
-    if (recordingState !== 'recording') return;
+    selectedTypeRef.current = selectedType;
+  }, [selectedType]);
 
-    const timer = setInterval(() => setElapsedSeconds((current) => current + 1), 1000);
+  useEffect(() => {
+    routeRef.current = route;
+  }, [route]);
+
+  useEffect(() => {
+    distanceMetersRef.current = distanceMeters;
+  }, [distanceMeters]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const wasBackgrounded = appStateRef.current.match(/inactive|background/);
+      appStateRef.current = nextState;
+
+      if (wasBackgrounded && nextState === 'active' && recordingStateRef.current !== 'idle') {
+        setElapsedSeconds(calculateElapsedSeconds());
+        void mergeQueuedBackgroundRoutePoints();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [calculateElapsedSeconds, mergeQueuedBackgroundRoutePoints]);
+
+  useEffect(() => {
+    if (recordingState === 'idle') return;
+
+    setElapsedSeconds(calculateElapsedSeconds());
+    const timer = setInterval(() => setElapsedSeconds(calculateElapsedSeconds()), 1000);
     return () => clearInterval(timer);
-  }, [recordingState]);
+  }, [calculateElapsedSeconds, recordingState]);
+
+  const startLiveLocationWatch = async () => {
+    watchRef.current?.remove();
+    watchRef.current = await startForegroundLocationUpdates(
+      (point) => {
+        void (async () => {
+          await mergeQueuedBackgroundRoutePoints();
+          appendRoutePoint(point);
+        })();
+      },
+      (message) => {
+        if (__DEV__) console.warn('[LevelUp] Foreground GPS error', message);
+      }
+    );
+  };
+
+  const startBackgroundTrackingIfAllowed = async () => {
+    if (!backgroundTrackingAllowedRef.current) return;
+
+    try {
+      const started = await startBackgroundLocationUpdates(selectedTypeRef.current);
+      setBackgroundTrackingActive(started);
+      if (!started) {
+        setBackgroundTrackingWarning('Foreground GPS only');
+      }
+    } catch (caught) {
+      setBackgroundTrackingActive(false);
+      setBackgroundTrackingWarning('Foreground GPS only');
+      if (__DEV__) console.warn('[LevelUp] Background GPS failed to start', caught);
+    }
+  };
 
   const startGps = async () => {
-    const permission = await Location.requestForegroundPermissionsAsync();
-    if (permission.status !== 'granted') {
+    const wantsBackground = await confirmBackgroundTracking();
+    const permissions = await requestGpsPermissions(wantsBackground);
+    if (!permissions.foregroundGranted) {
       Alert.alert('Location needed', 'Enable location permission to record GPS activities.');
       return;
+    }
+
+    if (wantsBackground && !permissions.backgroundGranted) {
+      setBackgroundTrackingWarning('Foreground GPS only');
+      Alert.alert(
+        'Foreground-only recording',
+        permissions.taskManagerAvailable && permissions.backgroundAvailable
+          ? 'Background location was not granted. You can still record, but locked-screen tracking may be inaccurate.'
+          : 'Expo Go cannot fully run background GPS tasks. You can still test foreground recording here, then use a development build for locked-screen tracking.'
+      );
+    } else {
+      setBackgroundTrackingWarning(null);
     }
 
     setElapsedSeconds(0);
     setDistanceMeters(0);
     setRoute([]);
     setCurrentPoint(null);
+    routeRef.current = [];
+    distanceMetersRef.current = 0;
+    segmentIdRef.current = 0;
+    startedAtMsRef.current = Date.now();
+    pausedAtMsRef.current = null;
+    pausedDurationMsRef.current = 0;
+    backgroundTrackingAllowedRef.current = permissions.backgroundGranted;
+    forceNextSegmentRef.current = false;
     setRecordingState('recording');
+    recordingStateRef.current = 'recording';
+    try {
+      await clearQueuedBackgroundPoints();
+      await startBackgroundTrackingIfAllowed();
+      await startLiveLocationWatch();
+    } catch (caught) {
+      recordingStateRef.current = 'idle';
+      setRecordingState('idle');
+      watchRef.current?.remove();
+      watchRef.current = null;
+      await stopBackgroundLocationUpdates();
+      setBackgroundTrackingActive(false);
+      setBackgroundTrackingWarning(null);
+      logRecordSaveError('start-gps-tracking', { type: selectedType }, caught);
+      Alert.alert('Could not start GPS', caught instanceof Error ? caught.message : 'Try again.');
+    }
+  };
 
-    watchRef.current = await Location.watchPositionAsync(
-      {
-        accuracy: Location.Accuracy.Balanced,
-        distanceInterval: 5,
-        timeInterval: 3000
-      },
-      (location) => {
-        if (recordingStateRef.current !== 'recording') return;
-
-        const point: RoutePoint = {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-          altitude: location.coords.altitude,
-          accuracy: location.coords.accuracy,
-          timestamp: location.timestamp
-        };
-
-        setCurrentPoint(point);
-        setRoute((current) => {
-          const last = current[current.length - 1];
-          if (last) {
-            setDistanceMeters((meters) => meters + distanceBetweenMeters(last, point));
-          }
-          return [...current, point];
-        });
-      }
-    );
+  const pauseGps = async () => {
+    await mergeQueuedBackgroundRoutePoints();
+    pausedAtMsRef.current = Date.now();
+    recordingStateRef.current = 'paused';
+    setRecordingState('paused');
+    setElapsedSeconds(calculateElapsedSeconds());
+    watchRef.current?.remove();
+    watchRef.current = null;
+    await stopBackgroundLocationUpdates();
+    setBackgroundTrackingActive(false);
   };
 
   const stopGps = async () => {
     if (!userId) return;
+    await mergeQueuedBackgroundRoutePoints();
+    const completedAtMs = Date.now();
+    const finalElapsedSeconds = calculateElapsedSeconds(completedAtMs);
     watchRef.current?.remove();
     watchRef.current = null;
+    await stopBackgroundLocationUpdates();
+    setBackgroundTrackingActive(false);
     setRecordingState('idle');
+    recordingStateRef.current = 'idle';
     await saveWorkout({
       type: selectedType,
-      durationSeconds: elapsedSeconds,
-      distanceMeters,
-      route
+      durationSeconds: finalElapsedSeconds,
+      distanceMeters: distanceMetersRef.current,
+      route: routeRef.current,
+      startedAt: startedAtMsRef.current ? new Date(startedAtMsRef.current).toISOString() : undefined,
+      completedAt: new Date(completedAtMs).toISOString()
     });
+  };
+
+  const resumeGps = async () => {
+    if (pausedAtMsRef.current) {
+      pausedDurationMsRef.current += Date.now() - pausedAtMsRef.current;
+    }
+
+    pausedAtMsRef.current = null;
+    forceNextSegmentRef.current = true;
+    recordingStateRef.current = 'recording';
+    setRecordingState('recording');
+    setElapsedSeconds(calculateElapsedSeconds());
+    await clearQueuedBackgroundPoints();
+    await startBackgroundTrackingIfAllowed();
+    await startLiveLocationWatch();
   };
 
   const saveManualWorkout = async () => {
@@ -297,6 +465,16 @@ export default function RecordScreen() {
     setDistanceMeters(0);
     setRoute([]);
     setCurrentPoint(null);
+    routeRef.current = [];
+    distanceMetersRef.current = 0;
+    startedAtMsRef.current = null;
+    pausedAtMsRef.current = null;
+    pausedDurationMsRef.current = 0;
+    segmentIdRef.current = 0;
+    backgroundTrackingAllowedRef.current = false;
+    forceNextSegmentRef.current = false;
+    setBackgroundTrackingActive(false);
+    setBackgroundTrackingWarning(null);
   };
 
   return (
@@ -313,6 +491,18 @@ export default function RecordScreen() {
             <Ionicons name={selectedIsGps ? 'navigate' : 'barbell'} size={16} color={colors.primary} />
             <AppText style={styles.sportBadgeText}>{ACTIVITY_LABELS[selectedType]}</AppText>
           </View>
+          {recordingState !== 'idle' && (
+            <View style={[styles.gpsModeBadge, backgroundTrackingActive ? styles.gpsModeBadgeActive : styles.gpsModeBadgeWarning]}>
+              <Ionicons
+                name={backgroundTrackingActive ? 'lock-closed' : 'phone-portrait'}
+                size={13}
+                color={backgroundTrackingActive ? colors.success : colors.warning}
+              />
+              <AppText style={[styles.gpsModeText, { color: backgroundTrackingActive ? colors.success : colors.warning }]}>
+                {backgroundTrackingActive ? 'BG GPS' : backgroundTrackingWarning ?? 'FG GPS'}
+              </AppText>
+            </View>
+          )}
         </View>
 
         <View style={styles.bottomControls}>
@@ -337,13 +527,13 @@ export default function RecordScreen() {
                 )}
                 {recordingState === 'recording' && (
                   <View style={styles.recordingButtons}>
-                    <PrimaryButton label="Pause" variant="secondary" onPress={() => setRecordingState('paused')} style={styles.controlButton} />
+                    <PrimaryButton label="Pause" variant="secondary" onPress={pauseGps} style={styles.controlButton} />
                     <PrimaryButton label={saving ? 'Saving...' : 'Stop'} variant="danger" onPress={stopGps} disabled={saving || elapsedSeconds < 5} style={styles.controlButton} />
                   </View>
                 )}
                 {recordingState === 'paused' && (
                   <View style={styles.recordingButtons}>
-                    <PrimaryButton label="Resume" onPress={() => setRecordingState('recording')} style={styles.controlButton} />
+                    <PrimaryButton label="Resume" onPress={resumeGps} style={styles.controlButton} />
                     <PrimaryButton label={saving ? 'Saving...' : 'Stop'} variant="danger" onPress={stopGps} disabled={saving || elapsedSeconds < 5} style={styles.controlButton} />
                   </View>
                 )}
@@ -409,6 +599,30 @@ export default function RecordScreen() {
     </Screen>
   );
 }
+
+const confirmBackgroundTracking = () =>
+  new Promise<boolean>((resolve) => {
+    if (Platform.OS === 'web') {
+      resolve(false);
+      return;
+    }
+
+    Alert.alert(
+      'Keep recording when locked?',
+      'Background location is required to keep recording when the screen is locked or the app is in the background.',
+      [
+        {
+          text: 'Foreground only',
+          style: 'cancel',
+          onPress: () => resolve(false)
+        },
+        {
+          text: 'Enable background GPS',
+          onPress: () => resolve(true)
+        }
+      ]
+    );
+  });
 
 const activitySaveErrorMessage = (caught: unknown) => {
   const message = errorMessage(caught);
@@ -810,6 +1024,29 @@ const styles = StyleSheet.create({
   },
   sportBadgeText: {
     color: colors.primary,
+    fontWeight: '900'
+  },
+  gpsModeBadge: {
+    position: 'absolute',
+    right: spacing.md,
+    top: spacing.md,
+    minHeight: 32,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    backgroundColor: 'rgba(11, 22, 40, 0.78)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm
+  },
+  gpsModeBadgeActive: {
+    borderColor: colors.success
+  },
+  gpsModeBadgeWarning: {
+    borderColor: colors.warning
+  },
+  gpsModeText: {
+    fontSize: 11,
     fontWeight: '900'
   },
   bottomControls: {

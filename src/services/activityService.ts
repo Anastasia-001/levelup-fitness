@@ -59,8 +59,10 @@ export const listActivities = async (userId: string) => {
 
 export const saveActivity = async (userId: string, input: ActivityInput) => {
   const { expEarned, statExp } = calculateActivityExp(input);
-  const completedAt = new Date().toISOString();
-  const startedAt = new Date(Date.now() - input.durationSeconds * 1000).toISOString();
+  const completedAt = input.completedAt ?? new Date().toISOString();
+  const startedAt =
+    input.startedAt ??
+    new Date(new Date(completedAt).getTime() - input.durationSeconds * 1000).toISOString();
   const payload: ActivityInsert = {
     user_id: userId,
     type: input.type,
@@ -235,6 +237,8 @@ const normalizeRoute = (route?: RoutePoint[]) => {
       longitude: point.longitude,
       altitude: point.altitude ?? null,
       accuracy: point.accuracy ?? null,
+      speed: point.speed ?? null,
+      segmentId: point.segmentId ?? 0,
       timestamp: point.timestamp
     }));
 

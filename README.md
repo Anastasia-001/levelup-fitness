@@ -6,7 +6,7 @@ LevelUp Fitness is a simple Strava-like fitness RPG mobile app built with Expo R
 
 - Email/password signup and login with Supabase
 - Username profile and metric/imperial unit preference
-- Five tabs: Record, Activities, Character, Missions, Profile
+- Five tabs: Shop, Record, Character, Missions, Me
 - GPS recording for Run, Walk, Bike, and Hike
 - Manual logging for Gym workout, Pushups, Swimming, and Other workout
 - Activity EXP, stat EXP, level progression, and daily mission bonus EXP
@@ -66,6 +66,8 @@ npm run start
 
 Then open the app with Expo Go on a physical device. GPS tracking works best on a real phone with location permissions enabled.
 
+Expo Go is useful for foreground GPS testing, but true locked-screen/background GPS requires a development build or native build because it uses Expo TaskManager and background location services.
+
 You can also run platform targets:
 
 ```bash
@@ -79,11 +81,33 @@ npm run android
 2. Open the Record tab.
 3. Save a manual workout first, such as Pushups with 20 reps, to verify EXP and mission completion.
 4. Start a GPS activity on a physical device, allow location access, move around, pause/resume, then stop and save.
-5. Check Activities for newest-first history.
+5. Check Me for newest-first activity history.
 6. Check Character for total EXP, level progress, and stat levels.
 7. Check Missions for daily progress and completed rewards.
-8. Update username or unit preference in Profile, then save.
+8. Update username or unit preference in Me settings.
 9. Logout and login again to verify persisted Supabase data.
+
+## GPS Recording Notes
+
+- Run, Walk, Bike, and Hike use high-accuracy foreground location while the Record screen is open.
+- Development/native builds can request background location so active workouts continue while the screen is locked.
+- The app calculates elapsed workout time from real start, pause, resume, and stop timestamps instead of relying only on a foreground JavaScript timer.
+- Route points include latitude, longitude, timestamp, accuracy, speed, altitude, and segment IDs for route gaps.
+- Very inaccurate points, duplicate points, unrealistic speed jumps, and long foreground/background gaps are filtered so they do not inflate distance.
+
+To test foreground tracking:
+
+1. Run `npm run start`.
+2. Open the app in Expo Go on a physical device.
+3. Start Run, Walk, Bike, or Hike and keep the app open.
+4. Move for a few minutes, pause/resume if needed, then stop and save.
+
+To test true background tracking:
+
+1. Create and install a development build or native build.
+2. Grant foreground and background location permissions when prompted.
+3. Start a GPS activity, lock the phone, move for several minutes, unlock, then stop and save.
+4. Confirm duration reflects wall-clock active time and the route does not draw one fake straight line across long gaps.
 
 ## Project Structure
 
