@@ -1,4 +1,4 @@
-import { Activity, Character, Mission, Profile } from '@/types/domain';
+import { Activity, Character, Mission, Profile, RoutePoint } from '@/types/domain';
 
 export const mapProfile = (row: {
   id: string;
@@ -55,7 +55,7 @@ export const mapActivity = (row: {
   completed_at: string;
   duration_seconds: number;
   distance_meters: number | null;
-  route: Activity['route'] | null;
+  route: unknown;
   sets: number | null;
   reps: number | null;
   weight_kg: number | null;
@@ -72,7 +72,7 @@ export const mapActivity = (row: {
   completedAt: row.completed_at,
   durationSeconds: row.duration_seconds,
   distanceMeters: row.distance_meters ?? undefined,
-  route: row.route ?? undefined,
+  route: mapRoute(row.route),
   sets: row.sets ?? undefined,
   reps: row.reps ?? undefined,
   weightKg: row.weight_kg ?? undefined,
@@ -87,6 +87,42 @@ export const fallbackActivityTitle = (type: Activity['type']) => {
   if (type === 'bike') return 'Bike ride';
   if (type === 'walk') return 'Walk';
   return 'Workout';
+};
+
+const mapRoute = (value: unknown): RoutePoint[] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+
+  const points = value
+    .map((point, index) => mapRoutePoint(point, index))
+    .filter((point): point is RoutePoint => Boolean(point));
+
+  return points.length ? points : undefined;
+};
+
+const mapRoutePoint = (value: unknown, index: number): RoutePoint | null => {
+  if (!value || typeof value !== 'object') return null;
+
+  const point = value as Record<string, unknown>;
+  const latitude = Number(point.latitude);
+  const longitude = Number(point.longitude);
+  const timestamp = Number(point.timestamp);
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+
+  return {
+    latitude,
+    longitude,
+    altitude: nullableNumber(point.altitude),
+    accuracy: nullableNumber(point.accuracy),
+    speed: nullableNumber(point.speed),
+    segmentId: Number.isFinite(Number(point.segmentId)) ? Number(point.segmentId) : 0,
+    timestamp: Number.isFinite(timestamp) ? timestamp : index
+  };
+};
+
+const nullableNumber = (value: unknown) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 };
 
 export const mapMission = (row: {

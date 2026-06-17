@@ -1,12 +1,13 @@
-import { Image, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Image, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useEffect, useState } from 'react';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { AppText } from '@/components/AppText';
+import { ActivityRouteMap } from '@/components/ActivityRouteMap';
 import { Card } from '@/components/Card';
 import { ACTIVITY_LABELS } from '@/constants/activities';
-import { colors, spacing } from '@/constants/theme';
+import { colors, radii, spacing } from '@/constants/theme';
 import { Activity, UnitPreference } from '@/types/domain';
-import { formatDistance, formatDuration } from '@/utils/format';
+import { formatDistance, formatDuration, formatPace } from '@/utils/format';
 
 export const ActivityHistoryList = ({
   activities,
@@ -32,6 +33,7 @@ export const ActivityHistoryList = ({
         <Pressable key={activity.id} onPress={() => setSelectedActivity(activity)}>
           <Card>
             {activity.photoUrl && <ActivityPhoto uri={activity.photoUrl} />}
+            {hasRoute(activity) && <ActivityRouteMap route={activity.route} height={150} />}
             <View style={styles.activityTop}>
               <View style={{ flex: 1 }}>
                 <AppText variant="subtitle">{activity.title || ACTIVITY_LABELS[activity.type]}</AppText>
@@ -53,18 +55,36 @@ export const ActivityHistoryList = ({
         <View style={styles.modalBackdrop}>
           {selectedActivity && (
             <View style={styles.modalCard}>
-              {selectedActivity.photoUrl && <ActivityPhoto uri={selectedActivity.photoUrl} large />}
-              <AppText variant="title">{selectedActivity.title || ACTIVITY_LABELS[selectedActivity.type]}</AppText>
-              <AppText variant="caption" style={styles.activityType}>
-                {ACTIVITY_LABELS[selectedActivity.type]}
-              </AppText>
-              <AppText muted>{new Date(selectedActivity.completedAt).toLocaleString()}</AppText>
-              <View style={styles.activityMeta}>
-                <AppText>{formatDuration(selectedActivity.durationSeconds)}</AppText>
-                <AppText>{selectedActivity.distanceMeters ? formatDistance(selectedActivity.distanceMeters, units) : 'Manual workout'}</AppText>
-                <AppText style={styles.exp}>+{selectedActivity.expEarned} EXP</AppText>
-              </View>
-              <PrimaryButton label="Close" onPress={() => setSelectedActivity(null)} />
+              <ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
+                <View>
+                  <AppText variant="title">{selectedActivity.title || ACTIVITY_LABELS[selectedActivity.type]}</AppText>
+                  <AppText variant="caption" style={styles.activityType}>
+                    {ACTIVITY_LABELS[selectedActivity.type]}
+                  </AppText>
+                  <AppText muted>{new Date(selectedActivity.completedAt).toLocaleString()}</AppText>
+                </View>
+
+                <View style={styles.detailStatsGrid}>
+                  <DetailStat label="Distance" value={selectedActivity.distanceMeters ? formatDistance(selectedActivity.distanceMeters, units) : 'Manual'} />
+                  <DetailStat label="Duration" value={formatDuration(selectedActivity.durationSeconds)} />
+                  <DetailStat label="Avg pace" value={formatPace(selectedActivity.durationSeconds, selectedActivity.distanceMeters, units)} />
+                  <DetailStat label="EXP" value={`+${selectedActivity.expEarned}`} accent />
+                </View>
+
+                {selectedActivity.photoUrl && <ActivityPhoto uri={selectedActivity.photoUrl} large />}
+
+                <View style={styles.detailSection}>
+                  <View>
+                    <AppText variant="caption" style={styles.activityType}>
+                      Route
+                    </AppText>
+                    <AppText variant="subtitle">Activity map</AppText>
+                  </View>
+                  <ActivityRouteMap route={selectedActivity.route} height={260} interactive />
+                </View>
+
+                <PrimaryButton label="Close" onPress={() => setSelectedActivity(null)} />
+              </ScrollView>
             </View>
           )}
         </View>
@@ -99,6 +119,19 @@ const ActivityPhoto = ({ uri, large = false }: { uri: string; large?: boolean })
     />
   );
 };
+
+const hasRoute = (activity: Activity) => Boolean(activity.route?.length);
+
+const DetailStat = ({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) => (
+  <View style={styles.detailStat}>
+    <AppText variant="caption" muted>
+      {label}
+    </AppText>
+    <AppText style={[styles.detailStatValue, accent && styles.detailStatAccent]} numberOfLines={1}>
+      {value}
+    </AppText>
+  </View>
+);
 
 const styles = StyleSheet.create({
   list: {
@@ -146,13 +179,42 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end'
   },
   modalCard: {
+    maxHeight: '92%',
     backgroundColor: colors.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderWidth: 1,
     borderColor: colors.border,
+    overflow: 'hidden'
+  },
+  detailContent: {
     padding: spacing.lg,
     gap: spacing.md
+  },
+  detailSection: {
+    gap: spacing.sm
+  },
+  detailStatsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm
+  },
+  detailStat: {
+    width: '48.4%',
+    minHeight: 72,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.cardHigh,
+    padding: spacing.sm,
+    justifyContent: 'center'
+  },
+  detailStatValue: {
+    color: colors.text,
+    fontWeight: '900'
+  },
+  detailStatAccent: {
+    color: colors.warning
   },
   detailPhoto: {
     width: '100%',

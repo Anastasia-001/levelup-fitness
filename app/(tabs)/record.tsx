@@ -4,6 +4,7 @@ import type { LocationSubscription } from 'expo-location';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityRouteMap } from '@/components/ActivityRouteMap';
 import { AppText } from '@/components/AppText';
 import { FitnessMap } from '@/components/FitnessMap';
 import { PrimaryButton } from '@/components/PrimaryButton';
@@ -884,6 +885,16 @@ const PostActivityModal = ({
                 </View>
               )}
 
+            <View style={styles.routePreviewSection}>
+              <View>
+                <AppText variant="caption" style={{ color: colors.primary }}>
+                  Route
+                </AppText>
+                <AppText variant="subtitle">Workout path</AppText>
+              </View>
+              <ActivityRouteMap route={activity.route} height={220} />
+            </View>
+
             <View style={styles.titleFieldGroup}>
               <AppText variant="caption" style={{ color: colors.primary }}>
                 Title
@@ -1230,6 +1241,9 @@ const styles = StyleSheet.create({
   },
   titleFieldGroup: {
     gap: spacing.xs
+  },
+  routePreviewSection: {
+    gap: spacing.sm
   },
   postSportSection: {
     gap: spacing.sm
