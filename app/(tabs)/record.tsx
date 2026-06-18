@@ -3,7 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ActivityRouteMap } from '@/components/ActivityRouteMap';
 import { AppText } from '@/components/AppText';
 import { FitnessMap } from '@/components/FitnessMap';
@@ -38,6 +38,7 @@ const sportGroups = [
   { id: 'gps-sports', title: 'GPS sports', items: GPS_ACTIVITY_TYPES },
   { id: 'manual-workouts', title: 'Manual workouts', items: MANUAL_ACTIVITY_TYPES }
 ] as const;
+const POST_ACTIVITY_TYPES: ActivityType[] = [...GPS_ACTIVITY_TYPES, ...MANUAL_ACTIVITY_TYPES];
 
 export default function RecordScreen() {
   const [userId, setUserId] = useState<string | null>(null);
@@ -919,25 +920,44 @@ const PostActivityModal = ({
   onLibrary: () => void;
   onClose: () => void;
 }) => {
+  const insets = useSafeAreaInsets();
+  const [sportPickerVisible, setSportPickerVisible] = useState(false);
   const photoUri = photoPreviewUri || activity?.photoUrl;
+  const sportEditingDisabled = uploading || titleSaving || sportSaving;
+
+  const selectSport = (type: ActivityType) => {
+    if (!activity || activity.type === type) {
+      setSportPickerVisible(false);
+      return;
+    }
+
+    onSportChange(type);
+    setSportPickerVisible(false);
+  };
 
   return (
     <Modal visible={Boolean(activity)} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={styles.postSafeArea}>
+      <SafeAreaView style={styles.postSafeArea} edges={['top', 'right', 'bottom', 'left']}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.postKeyboard}
         >
           {activity && (
             <ScrollView
-              contentContainerStyle={styles.postScroll}
+              contentContainerStyle={[
+                styles.postScroll,
+                {
+                  paddingTop: Math.max(spacing.lg, insets.top ? spacing.md : spacing.lg),
+                  paddingBottom: Math.max(spacing.xl, insets.bottom + spacing.lg)
+                }
+              ]}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
             >
               <View style={styles.postHeader}>
                 <View style={{ flex: 1 }}>
                   <AppText variant="caption" style={{ color: colors.success }}>
-                    Activity saved
+                    ACTIVITY SAVED
                   </AppText>
                   <AppText variant="title">Add a photo?</AppText>
                 </View>
@@ -1003,33 +1023,26 @@ const PostActivityModal = ({
                 </AppText>
                 {sportSaving && <AppText muted>Updating...</AppText>}
               </View>
-              <View style={styles.postSportGrid}>
-                {[...GPS_ACTIVITY_TYPES, ...MANUAL_ACTIVITY_TYPES].map((type) => {
-                  const selected = activity.type === type;
-                  return (
-                    <Pressable
-                      key={type}
-                      onPress={() => onSportChange(type)}
-                      disabled={selected || uploading || titleSaving || sportSaving}
-                      style={({ pressed }) => [
-                        styles.postSportOption,
-                        selected && styles.postSportOptionActive,
-                        pressed && !selected && styles.pressed,
-                        (uploading || titleSaving || sportSaving) && !selected && styles.disabled
-                      ]}
-                    >
-                      <Ionicons
-                        name={isGpsActivity(type) ? 'navigate-outline' : 'barbell-outline'}
-                        size={18}
-                        color={selected ? colors.black : colors.primary}
-                      />
-                      <AppText style={[styles.postSportText, selected && styles.postSportTextActive]}>
-                        {ACTIVITY_LABELS[type]}
-                      </AppText>
-                    </Pressable>
-                  );
-                })}
-              </View>
+              <Pressable
+                onPress={() => setSportPickerVisible(true)}
+                disabled={sportEditingDisabled}
+                style={({ pressed }) => [
+                  styles.postSportSelector,
+                  pressed && styles.pressed,
+                  sportEditingDisabled && styles.disabled
+                ]}
+              >
+                <View style={styles.postSportSelectorIcon}>
+                  <Ionicons name={isGpsActivity(activity.type) ? 'navigate-outline' : 'barbell-outline'} size={18} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <AppText variant="caption" muted>
+                    Sport
+                  </AppText>
+                  <AppText style={styles.postSportSelectorText}>Sport: {ACTIVITY_LABELS[activity.type]}</AppText>
+                </View>
+                <Ionicons name="chevron-down" size={20} color={colors.primary} />
+              </Pressable>
             </View>
 
             <View style={styles.summaryGrid}>
@@ -1055,6 +1068,60 @@ const PostActivityModal = ({
             </ScrollView>
           )}
         </KeyboardAvoidingView>
+
+        {activity && (
+          <Modal
+            visible={sportPickerVisible}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setSportPickerVisible(false)}
+          >
+            <View style={styles.postSportSheetWrap}>
+              <Pressable style={StyleSheet.absoluteFill} onPress={() => setSportPickerVisible(false)} />
+              <View style={[styles.postSportSheet, { paddingBottom: Math.max(spacing.lg, insets.bottom + spacing.sm) }]}>
+                <View style={styles.postSportSheetHeader}>
+                  <View>
+                    <AppText variant="caption" style={{ color: colors.primary }}>
+                      Sport
+                    </AppText>
+                    <AppText variant="subtitle">Choose activity</AppText>
+                  </View>
+                  <Pressable onPress={() => setSportPickerVisible(false)} style={styles.iconButton}>
+                    <Ionicons name="close" size={22} color={colors.text} />
+                  </Pressable>
+                </View>
+                <ScrollView style={styles.postSportSheetList} contentContainerStyle={styles.postSportSheetContent}>
+                  {POST_ACTIVITY_TYPES.map((type) => {
+                    const selected = activity.type === type;
+                    return (
+                      <Pressable
+                        key={`post-sport-${type}`}
+                        onPress={() => selectSport(type)}
+                        disabled={sportEditingDisabled || selected}
+                        style={({ pressed }) => [
+                          styles.postSportSheetRow,
+                          selected && styles.postSportSheetRowActive,
+                          pressed && !selected && styles.pressed,
+                          sportEditingDisabled && !selected && styles.disabled
+                        ]}
+                      >
+                        <Ionicons
+                          name={isGpsActivity(type) ? 'navigate-outline' : 'barbell-outline'}
+                          size={20}
+                          color={selected ? colors.black : colors.primary}
+                        />
+                        <AppText style={[styles.postSportSheetText, selected && styles.postSportSheetTextActive]}>
+                          {ACTIVITY_LABELS[type]}
+                        </AppText>
+                        {selected && <Ionicons name="checkmark-circle" size={20} color={colors.black} />}
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
+        )}
       </SafeAreaView>
     </Modal>
   );
@@ -1364,33 +1431,80 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between'
   },
-  postSportGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs
-  },
-  postSportOption: {
-    width: '48.8%',
-    minHeight: 46,
+  postSportSelector: {
+    minHeight: 58,
     borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.borderDim,
     backgroundColor: colors.cardHigh,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md
   },
-  postSportOptionActive: {
+  postSportSelectorIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  postSportSelectorText: {
+    color: colors.text,
+    fontWeight: '900'
+  },
+  postSportSheetWrap: {
+    flex: 1,
+    backgroundColor: 'rgba(2, 4, 10, 0.72)',
+    justifyContent: 'flex-end'
+  },
+  postSportSheet: {
+    maxHeight: '58%',
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    padding: spacing.lg,
+    gap: spacing.md
+  },
+  postSportSheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md
+  },
+  postSportSheetList: {
+    maxHeight: 360
+  },
+  postSportSheetContent: {
+    gap: spacing.sm,
+    paddingBottom: spacing.sm
+  },
+  postSportSheetRow: {
+    minHeight: 52,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.cardHigh,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md
+  },
+  postSportSheetRowActive: {
     borderColor: colors.primary,
     backgroundColor: colors.primary
   },
-  postSportText: {
+  postSportSheetText: {
+    flex: 1,
     color: colors.text,
     fontWeight: '800'
   },
-  postSportTextActive: {
+  postSportSheetTextActive: {
     color: colors.black,
     fontWeight: '900'
   },
