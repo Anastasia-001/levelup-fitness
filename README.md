@@ -66,7 +66,7 @@ npm run start
 
 Then open the app with Expo Go on a physical device. GPS tracking works best on a real phone with location permissions enabled.
 
-Expo Go is useful for foreground GPS testing, but true locked-screen/background GPS requires a development build or native build because it uses Expo TaskManager and background location services.
+Expo Go is useful for foreground GPS testing. In Expo Go, LevelUp Fitness requests foreground location only; true locked-screen/background GPS requires a development build or native build because it uses Expo TaskManager and background location services.
 
 You can also run platform targets:
 

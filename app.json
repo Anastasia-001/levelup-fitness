@@ -14,9 +14,9 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "LevelUp Fitness uses location to record GPS workouts, distance, pace, and route maps.",
-          "locationAlwaysAndWhenInUsePermission": "LevelUp Fitness uses background location to keep recording active workouts when the screen is locked.",
-          "locationAlwaysPermission": "LevelUp Fitness uses background location to keep recording active workouts when the screen is locked.",
+          "locationWhenInUsePermission": "LevelUp Fitness uses your location to record your workout route, distance, and pace.",
+          "locationAlwaysAndWhenInUsePermission": "LevelUp Fitness needs background location to keep recording your route when the screen is locked.",
+          "locationAlwaysPermission": "LevelUp Fitness needs background location to keep recording your route when the screen is locked.",
           "isIosBackgroundLocationEnabled": true,
           "isAndroidBackgroundLocationEnabled": true,
           "isAndroidForegroundServiceEnabled": true
@@ -29,9 +29,9 @@
       "bundleIdentifier": "com.anastasia001.levelupfitness",
       "supportsTablet": false,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "LevelUp Fitness uses location to record GPS workouts and calculate distance.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "LevelUp Fitness uses background location to keep recording active workouts when the screen is locked.",
-        "NSLocationAlwaysUsageDescription": "LevelUp Fitness uses background location to keep recording active workouts when the screen is locked.",
+        "NSLocationWhenInUseUsageDescription": "LevelUp Fitness uses your location to record your workout route, distance, and pace.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "LevelUp Fitness needs background location to keep recording your route when the screen is locked.",
+        "NSLocationAlwaysUsageDescription": "LevelUp Fitness needs background location to keep recording your route when the screen is locked.",
         "UIBackgroundModes": [
           "location"
         ],
@@ -40,14 +40,7 @@
       }
     },
     "android": {
-      "package": "com.anastasia001.levelupfitness",
-      "permissions": [
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION",
-        "FOREGROUND_SERVICE",
-        "FOREGROUND_SERVICE_LOCATION"
-      ]
+      "package": "com.anastasia001.levelupfitness"
     },
     "extra": {
       "router": {

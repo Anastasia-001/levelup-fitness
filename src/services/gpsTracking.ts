@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import { ActivityType, RoutePoint } from '@/types/domain';
@@ -84,13 +85,18 @@ const backgroundLocationOptions: Location.LocationTaskOptions = {
 
 export const requestGpsPermissions = async (requestBackground: boolean): Promise<LocationPermissionResult> => {
   const foreground = await Location.requestForegroundPermissionsAsync();
-  const taskManagerAvailable = await safeTaskManagerAvailable();
-  const backgroundAvailable = await safeBackgroundLocationAvailable();
+  const expoGoRuntime = isExpoGoRuntime();
+  const taskManagerAvailable = expoGoRuntime ? false : await safeTaskManagerAvailable();
+  const backgroundAvailable = expoGoRuntime ? false : await safeBackgroundLocationAvailable();
   let backgroundGranted = false;
 
   if (foreground.status === 'granted' && requestBackground && taskManagerAvailable && backgroundAvailable) {
-    const background = await Location.requestBackgroundPermissionsAsync();
-    backgroundGranted = background.status === 'granted';
+    try {
+      const background = await Location.requestBackgroundPermissionsAsync();
+      backgroundGranted = background.status === 'granted';
+    } catch (caught) {
+      logGpsWarning('request-background-permission', caught);
+    }
   }
 
   return {
@@ -319,6 +325,8 @@ const safeBackgroundLocationAvailable = async () => {
     return false;
   }
 };
+
+const isExpoGoRuntime = () => Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
 const logGpsWarning = (stage: string, error: unknown) => {
   if (!__DEV__) return;
