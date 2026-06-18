@@ -1,9 +1,9 @@
+import '@/services/gpsTracking';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
-import '@/services/gpsTracking';
 import { colors } from '@/constants/theme';
 import { useAuthSession } from '@/hooks/useAuthSession';
 

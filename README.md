@@ -129,6 +129,14 @@ Testing background GPS:
 
 Android development builds can be installed from the EAS build link or QR code. Physical iPhone device builds through EAS require Apple Developer signing access; iOS Simulator builds require macOS and the iOS Simulator.
 
+Expected background tracking behavior:
+
+- Starting a GPS activity starts foreground GPS and, when permission is granted, native background location updates.
+- If background permission is denied or unavailable, the app falls back to foreground-only recording and warns that locked-screen tracking may be inaccurate.
+- While the app is backgrounded, route points are queued locally and merged into the active route when the app returns to the foreground.
+- Pausing or stopping an activity stops background location updates so tracking does not continue after the workout ends.
+- Expo Go should be treated as foreground-only for GPS; use a development build for locked-screen tests.
+
 ## Test The App
 
 1. Sign up with email, password, and username.
@@ -145,6 +153,7 @@ Android development builds can be installed from the EAS build link or QR code. 
 
 - Run, Walk, Bike, and Hike use high-accuracy foreground location while the Record screen is open.
 - Development/native builds can request background location so active workouts continue while the screen is locked.
+- The background task is registered from the root app layout and stores queued route points locally until the Record screen returns to the foreground.
 - The app calculates elapsed workout time from real start, pause, resume, and stop timestamps instead of relying only on a foreground JavaScript timer.
 - Route points include latitude, longitude, timestamp, accuracy, speed, altitude, and segment IDs for route gaps.
 - Very inaccurate points, duplicate points, unrealistic speed jumps, and long foreground/background gaps are filtered so they do not inflate distance.
