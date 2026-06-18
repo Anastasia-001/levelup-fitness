@@ -71,6 +71,7 @@ export default function RecordScreen() {
   const selectedTypeRef = useRef<ActivityType>('run');
   const startedAtMsRef = useRef<number | null>(null);
   const pausedAtMsRef = useRef<number | null>(null);
+  const stoppedAtMsRef = useRef<number | null>(null);
   const pausedDurationMsRef = useRef(0);
   const routeRef = useRef<RoutePoint[]>([]);
   const currentPointRef = useRef<RoutePoint | null>(null);
@@ -300,7 +301,14 @@ export default function RecordScreen() {
 
     const initialPoint = await getCurrentLocationPoint({ showLoading: true });
     const seedPoint = initialPoint ?? currentPointRef.current;
-    const initialRoute = seedPoint ? [{ ...seedPoint, segmentId: 0 }] : [];
+    const seedResult = seedPoint
+      ? evaluateRoutePoint({
+          point: seedPoint,
+          activityType: selectedTypeRef.current,
+          segmentId: 0
+        })
+      : null;
+    const initialRoute = seedResult?.accepted && seedResult.point ? [seedResult.point] : [];
 
     setElapsedSeconds(0);
     setDistanceMeters(0);
@@ -313,6 +321,7 @@ export default function RecordScreen() {
     setGpsStatus(seedPoint ? 'ready' : 'finding');
     startedAtMsRef.current = Date.now();
     pausedAtMsRef.current = null;
+    stoppedAtMsRef.current = null;
     pausedDurationMsRef.current = 0;
     backgroundTrackingAllowedRef.current = permissions.backgroundGranted;
     forceNextSegmentRef.current = false;
@@ -350,8 +359,9 @@ export default function RecordScreen() {
   const stopGps = async () => {
     if (!userId) return;
     await mergeQueuedBackgroundRoutePoints();
-    const completedAtMs = Date.now();
-    const finalElapsedSeconds = calculateElapsedSeconds(completedAtMs);
+    const stoppedAtMs = Date.now();
+    stoppedAtMsRef.current = stoppedAtMs;
+    const finalElapsedSeconds = calculateElapsedSeconds(stoppedAtMs);
     watchRef.current?.remove();
     watchRef.current = null;
     await stopBackgroundLocationUpdates();
@@ -364,7 +374,7 @@ export default function RecordScreen() {
       distanceMeters: distanceMetersRef.current,
       route: routeRef.current,
       startedAt: startedAtMsRef.current ? new Date(startedAtMsRef.current).toISOString() : undefined,
-      completedAt: new Date(completedAtMs).toISOString()
+      completedAt: new Date(stoppedAtMs).toISOString()
     });
   };
 
@@ -532,6 +542,7 @@ export default function RecordScreen() {
     distanceMetersRef.current = 0;
     startedAtMsRef.current = null;
     pausedAtMsRef.current = null;
+    stoppedAtMsRef.current = null;
     pausedDurationMsRef.current = 0;
     segmentIdRef.current = 0;
     backgroundTrackingAllowedRef.current = false;

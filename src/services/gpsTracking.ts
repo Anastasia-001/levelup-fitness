@@ -2,6 +2,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
+import {
+  GPS_BACKGROUND_MAX_QUEUED_POINTS,
+  GPS_DUPLICATE_TIME_WINDOW_MS,
+  GPS_LONG_TRACKING_GAP_MS,
+  GPS_MAX_ACCURACY_METERS,
+  GPS_MAX_REASONABLE_SPEED_BY_SPORT,
+  GPS_MIN_DISTANCE_METERS,
+  GPS_MIN_TIME_MS
+} from '@/constants/gps';
 import { ActivityType, RoutePoint } from '@/types/domain';
 import { distanceBetweenMeters } from '@/utils/geo';
 
@@ -9,31 +18,6 @@ export const BACKGROUND_LOCATION_TASK = 'levelup-fitness-background-location';
 
 const BACKGROUND_POINTS_KEY = '@levelup-fitness/background-route-points';
 const BACKGROUND_SESSION_KEY = '@levelup-fitness/background-route-session';
-const MAX_QUEUED_BACKGROUND_POINTS = 6000;
-const MIN_POINT_DISTANCE_METERS = 2;
-const LONG_TRACKING_GAP_MS = 45_000;
-
-const MAX_ACCURACY_METERS: Record<ActivityType, number> = {
-  run: 65,
-  walk: 65,
-  bike: 85,
-  hike: 80,
-  gym_workout: 90,
-  pushups: 90,
-  swimming: 90,
-  other_workout: 90
-};
-
-const MAX_SPEED_MPS: Record<ActivityType, number> = {
-  walk: 3.2,
-  hike: 4.5,
-  run: 7.5,
-  bike: 22,
-  gym_workout: 4,
-  pushups: 4,
-  swimming: 4,
-  other_workout: 4
-};
 
 type BackgroundLocationData = {
   locations?: Location.LocationObject[];
@@ -63,8 +47,8 @@ export type RoutePointResult = {
 
 export const foregroundLocationOptions: Location.LocationOptions = {
   accuracy: Location.Accuracy.BestForNavigation,
-  distanceInterval: 5,
-  timeInterval: 2000
+  distanceInterval: GPS_MIN_DISTANCE_METERS,
+  timeInterval: GPS_MIN_TIME_MS
 };
 
 const backgroundLocationOptions: Location.LocationTaskOptions = {
@@ -189,7 +173,7 @@ export const evaluateRoutePoint = ({
     return { accepted: false, distanceDelta: 0, segmentId, startsNewSegment: false, reason: 'invalid-coordinate' };
   }
 
-  if ((point.accuracy ?? 0) > MAX_ACCURACY_METERS[activityType]) {
+  if ((point.accuracy ?? 0) > GPS_MAX_ACCURACY_METERS) {
     return { accepted: false, distanceDelta: 0, segmentId, startsNewSegment: false, reason: 'poor-accuracy' };
   }
 
@@ -211,10 +195,10 @@ export const evaluateRoutePoint = ({
   const elapsedSeconds = Math.max(0.001, (point.timestamp - lastPoint.timestamp) / 1000);
   const calculatedSpeed = distance / elapsedSeconds;
   const reportedSpeed = point.speed ?? 0;
-  const maxSpeed = MAX_SPEED_MPS[activityType];
-  const longGap = point.timestamp - lastPoint.timestamp > LONG_TRACKING_GAP_MS;
+  const maxSpeed = GPS_MAX_REASONABLE_SPEED_BY_SPORT[activityType];
+  const longGap = point.timestamp - lastPoint.timestamp > GPS_LONG_TRACKING_GAP_MS;
 
-  if (distance < MIN_POINT_DISTANCE_METERS && elapsedSeconds < 8) {
+  if (distance < GPS_MIN_DISTANCE_METERS && point.timestamp - lastPoint.timestamp < GPS_DUPLICATE_TIME_WINDOW_MS) {
     return { accepted: false, distanceDelta: 0, segmentId, startsNewSegment: false, reason: 'duplicate-point' };
   }
 
@@ -285,7 +269,7 @@ const appendQueuedBackgroundPoints = async (points: RoutePoint[]) => {
   const existing = await readQueuedBackgroundPoints();
   const merged = dedupeRoutePoints([...existing, ...points])
     .sort((a, b) => a.timestamp - b.timestamp)
-    .slice(-MAX_QUEUED_BACKGROUND_POINTS);
+    .slice(-GPS_BACKGROUND_MAX_QUEUED_POINTS);
   await AsyncStorage.setItem(BACKGROUND_POINTS_KEY, JSON.stringify(merged));
 };
 
@@ -346,7 +330,7 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_TASK)) {
     const points = (data.locations ?? [])
       .map(routePointFromLocation)
       .filter((point): point is RoutePoint => Boolean(point))
-      .filter((point) => (point.accuracy ?? 0) <= MAX_ACCURACY_METERS[session.activityType]);
+      .filter((point) => (point.accuracy ?? 0) <= GPS_MAX_ACCURACY_METERS);
 
     await appendQueuedBackgroundPoints(points);
   });
