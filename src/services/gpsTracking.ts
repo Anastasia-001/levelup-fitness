@@ -9,7 +9,10 @@ import {
   GPS_MAX_ACCURACY_METERS,
   GPS_MAX_REASONABLE_SPEED_BY_SPORT,
   GPS_MIN_DISTANCE_METERS,
-  GPS_MIN_TIME_MS
+  GPS_MIN_TIME_MS,
+  GPS_POOR_ACCURACY_METERS,
+  GPS_POOR_ACCURACY_MIN_DISTANCE_METERS,
+  GPS_REPORTED_SPEED_TOLERANCE
 } from '@/constants/gps';
 import { ActivityType, RoutePoint } from '@/types/domain';
 import { distanceBetweenMeters } from '@/utils/geo';
@@ -173,7 +176,7 @@ export const evaluateRoutePoint = ({
     return { accepted: false, distanceDelta: 0, segmentId, startsNewSegment: false, reason: 'invalid-coordinate' };
   }
 
-  if ((point.accuracy ?? 0) > GPS_MAX_ACCURACY_METERS) {
+  if (isPoorAccuracy(point)) {
     return { accepted: false, distanceDelta: 0, segmentId, startsNewSegment: false, reason: 'poor-accuracy' };
   }
 
@@ -192,17 +195,29 @@ export const evaluateRoutePoint = ({
   }
 
   const distance = distanceBetweenMeters(lastPoint, point);
+  const timestampDelta = point.timestamp - lastPoint.timestamp;
   const elapsedSeconds = Math.max(0.001, (point.timestamp - lastPoint.timestamp) / 1000);
   const calculatedSpeed = distance / elapsedSeconds;
-  const reportedSpeed = point.speed ?? 0;
+  const reportedSpeed = validSpeed(point.speed);
   const maxSpeed = GPS_MAX_REASONABLE_SPEED_BY_SPORT[activityType];
-  const longGap = point.timestamp - lastPoint.timestamp > GPS_LONG_TRACKING_GAP_MS;
+  const longGap = timestampDelta > GPS_LONG_TRACKING_GAP_MS;
 
-  if (distance < GPS_MIN_DISTANCE_METERS && point.timestamp - lastPoint.timestamp < GPS_DUPLICATE_TIME_WINDOW_MS) {
+  if (isDuplicateCoordinate(lastPoint, point) || (distance < GPS_MIN_DISTANCE_METERS && timestampDelta < GPS_DUPLICATE_TIME_WINDOW_MS)) {
     return { accepted: false, distanceDelta: 0, segmentId, startsNewSegment: false, reason: 'duplicate-point' };
   }
 
-  if (reportedSpeed > maxSpeed * 1.25 || (!longGap && calculatedSpeed > maxSpeed)) {
+  if (
+    (isPoorAccuracy(point, GPS_POOR_ACCURACY_METERS) || isPoorAccuracy(lastPoint, GPS_POOR_ACCURACY_METERS)) &&
+    distance < GPS_POOR_ACCURACY_MIN_DISTANCE_METERS
+  ) {
+    return { accepted: false, distanceDelta: 0, segmentId, startsNewSegment: false, reason: 'poor-accuracy-small-move' };
+  }
+
+  if (reportedSpeed !== null && reportedSpeed > maxSpeed * GPS_REPORTED_SPEED_TOLERANCE) {
+    return { accepted: false, distanceDelta: 0, segmentId, startsNewSegment: false, reason: 'unrealistic-reported-speed' };
+  }
+
+  if (!longGap && calculatedSpeed > maxSpeed) {
     return { accepted: false, distanceDelta: 0, segmentId, startsNewSegment: false, reason: 'unrealistic-speed' };
   }
 
@@ -292,7 +307,25 @@ const isFiniteCoordinate = (point: RoutePoint) =>
   Number.isFinite(point.longitude) &&
   Math.abs(point.latitude) <= 90 &&
   Math.abs(point.longitude) <= 180 &&
-  Number.isFinite(point.timestamp);
+  Number.isFinite(point.timestamp) &&
+  point.timestamp > 0;
+
+const isPoorAccuracy = (point: RoutePoint, threshold = GPS_MAX_ACCURACY_METERS) =>
+  typeof point.accuracy === 'number' &&
+  Number.isFinite(point.accuracy) &&
+  point.accuracy > threshold;
+
+const isDuplicateCoordinate = (a: RoutePoint, b: RoutePoint) =>
+  Math.abs(a.latitude - b.latitude) < 0.000001 &&
+  Math.abs(a.longitude - b.longitude) < 0.000001;
+
+const validSpeed = (speed: RoutePoint['speed']) => {
+  if (typeof speed !== 'number' || !Number.isFinite(speed) || speed < 0) {
+    return null;
+  }
+
+  return speed;
+};
 
 const safeTaskManagerAvailable = async () => {
   try {
@@ -330,7 +363,7 @@ if (!TaskManager.isTaskDefined(BACKGROUND_LOCATION_TASK)) {
     const points = (data.locations ?? [])
       .map(routePointFromLocation)
       .filter((point): point is RoutePoint => Boolean(point))
-      .filter((point) => (point.accuracy ?? 0) <= GPS_MAX_ACCURACY_METERS);
+      .filter((point) => !isPoorAccuracy(point));
 
     await appendQueuedBackgroundPoints(points);
   });

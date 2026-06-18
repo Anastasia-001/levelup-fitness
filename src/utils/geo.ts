@@ -22,5 +22,9 @@ export const routeDistanceMeters = (points: RoutePoint[]) =>
       return 0;
     }
 
+    if (points[index - 1].segmentId !== point.segmentId) {
+      return total;
+    }
+
     return total + distanceBetweenMeters(points[index - 1], point);
   }, 0);

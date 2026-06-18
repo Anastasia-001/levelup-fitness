@@ -2,6 +2,7 @@ import { StyleSheet, View } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import { colors } from '@/constants/theme';
 import { RoutePoint } from '@/types/domain';
+import { smoothRouteSegmentForDisplay, splitRouteSegments } from '@/utils/routeRendering';
 
 type FitnessMapProps = {
   route: RoutePoint[];
@@ -10,7 +11,7 @@ type FitnessMapProps = {
 
 export const FitnessMap = ({ route, currentPoint }: FitnessMapProps) => {
   const last = route[route.length - 1] ?? currentPoint;
-  const routeSegments = splitRouteSegments(route);
+  const routeSegments = splitRouteSegments(route).map(smoothRouteSegmentForDisplay);
   const region = {
     latitude: last?.latitude ?? 37.78825,
     longitude: last?.longitude ?? -122.4324,
@@ -32,6 +33,8 @@ export const FitnessMap = ({ route, currentPoint }: FitnessMapProps) => {
           coordinates={segment}
           strokeColor={colors.route}
           strokeWidth={5}
+          lineCap="round"
+          lineJoin="round"
         />
       ))}
       {currentPoint && (
@@ -44,27 +47,6 @@ export const FitnessMap = ({ route, currentPoint }: FitnessMapProps) => {
       )}
     </MapView>
   );
-};
-
-const splitRouteSegments = (route: RoutePoint[]) => {
-  const segments: RoutePoint[][] = [];
-
-  route.forEach((point) => {
-    const previousSegment = segments[segments.length - 1];
-    const previousPoint = previousSegment?.[previousSegment.length - 1];
-    const startsNewSegment =
-      !previousSegment ||
-      previousPoint?.segmentId !== point.segmentId;
-
-    if (startsNewSegment) {
-      segments.push([point]);
-      return;
-    }
-
-    previousSegment.push(point);
-  });
-
-  return segments.filter((segment) => segment.length > 1);
 };
 
 const styles = StyleSheet.create({

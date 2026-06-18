@@ -3,9 +3,13 @@ import type { ActivityType } from '@/types/domain';
 export const GPS_MIN_TIME_MS = 1000;
 export const GPS_MIN_DISTANCE_METERS = 2;
 export const GPS_MAX_ACCURACY_METERS = 35;
+export const GPS_POOR_ACCURACY_METERS = 20;
+export const GPS_POOR_ACCURACY_MIN_DISTANCE_METERS = 8;
 export const GPS_LONG_TRACKING_GAP_MS = 45_000;
 export const GPS_DUPLICATE_TIME_WINDOW_MS = 8000;
 export const GPS_BACKGROUND_MAX_QUEUED_POINTS = 6000;
+export const GPS_REPORTED_SPEED_TOLERANCE = 1.25;
+export const GPS_SMOOTHING_MAX_SHIFT_METERS = 6;
 
 export const GPS_MAX_REASONABLE_SPEED_BY_SPORT: Record<ActivityType, number> = {
   walk: 2.8,

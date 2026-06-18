@@ -4,6 +4,12 @@ import MapView, { Marker, Polyline } from 'react-native-maps';
 import { AppText } from '@/components/AppText';
 import { colors, radii, spacing } from '@/constants/theme';
 import { RoutePoint } from '@/types/domain';
+import {
+  normalizeRouteForDisplay,
+  sampleRouteSegment,
+  smoothRouteSegmentForDisplay,
+  splitRouteSegments
+} from '@/utils/routeRendering';
 
 type ActivityRouteMapProps = {
   route?: RoutePoint[];
@@ -32,8 +38,11 @@ export const ActivityRouteMap = ({
 }: ActivityRouteMapProps) => {
   const mapRef = useRef<MapView | null>(null);
   const [ready, setReady] = useState(false);
-  const validRoute = useMemo(() => normalizeRoute(route), [route]);
-  const sampledSegments = useMemo(() => splitRouteSegments(validRoute).map(sampleSegment), [validRoute]);
+  const validRoute = useMemo(() => normalizeRouteForDisplay(route), [route]);
+  const sampledSegments = useMemo(
+    () => splitRouteSegments(validRoute).map(smoothRouteSegmentForDisplay).map(sampleRouteSegment),
+    [validRoute]
+  );
   const start = validRoute[0];
   const finish = validRoute[validRoute.length - 1];
   const initialRegion = {
@@ -113,43 +122,6 @@ export const ActivityRouteMap = ({
       </View>
     </View>
   );
-};
-
-const normalizeRoute = (route?: RoutePoint[]) =>
-  (route ?? [])
-    .filter((point) => Number.isFinite(point.latitude) && Number.isFinite(point.longitude))
-    .map((point, index) => ({
-      ...point,
-      segmentId: point.segmentId ?? 0,
-      timestamp: Number.isFinite(point.timestamp) ? point.timestamp : index
-    }));
-
-const splitRouteSegments = (route: RoutePoint[]) => {
-  const segments: RoutePoint[][] = [];
-
-  route.forEach((point) => {
-    const previousSegment = segments[segments.length - 1];
-    const previousPoint = previousSegment?.[previousSegment.length - 1];
-
-    if (!previousSegment || previousPoint?.segmentId !== point.segmentId) {
-      segments.push([point]);
-      return;
-    }
-
-    previousSegment.push(point);
-  });
-
-  return segments.filter((segment) => segment.length > 1);
-};
-
-const sampleSegment = (segment: RoutePoint[]) => {
-  const maxPoints = 600;
-  if (segment.length <= maxPoints) return segment;
-
-  const step = Math.ceil(segment.length / maxPoints);
-  const sampled = segment.filter((_, index) => index % step === 0);
-  const last = segment[segment.length - 1];
-  return sampled[sampled.length - 1] === last ? sampled : [...sampled, last];
 };
 
 const styles = StyleSheet.create({
