@@ -56,6 +56,19 @@ export const ActivityRouteMap = ({
     if (!ready || validRoute.length === 0) return;
 
     const timer = setTimeout(() => {
+      if (validRoute.length === 1) {
+        mapRef.current?.animateToRegion(
+          {
+            latitude: validRoute[0].latitude,
+            longitude: validRoute[0].longitude,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01
+          },
+          0
+        );
+        return;
+      }
+
       mapRef.current?.fitToCoordinates(validRoute, {
         edgePadding: { top: 42, right: 42, bottom: 42, left: 42 },
         animated: false
@@ -94,9 +107,9 @@ export const ActivityRouteMap = ({
         onMapReady={() => setReady(true)}
         onLayout={() => setReady(true)}
       >
-        {sampledSegments.map((segment) => (
+        {sampledSegments.map((segment, index) => (
           <Polyline
-            key={`saved-route-${segment[0]?.segmentId ?? 0}-${segment[0]?.timestamp ?? 0}`}
+            key={`saved-route-${segment[0]?.segmentId ?? 0}-${segment[0]?.timestamp ?? 0}-${index}`}
             coordinates={segment}
             strokeColor={colors.route}
             strokeWidth={5}
