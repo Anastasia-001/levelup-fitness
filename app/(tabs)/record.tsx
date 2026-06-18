@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import type { LocationSubscription } from 'expo-location';
+import * as Location from 'expo-location';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,6 +19,7 @@ import {
   consumeQueuedBackgroundPoints,
   evaluateRoutePoint,
   requestGpsPermissions,
+  routePointFromLocation,
   startBackgroundLocationUpdates,
   startForegroundLocationUpdates,
   stopBackgroundLocationUpdates
@@ -31,6 +32,7 @@ import { Activity, ActivityType, RoutePoint } from '@/types/domain';
 import { formatDistance, formatDuration, formatPace } from '@/utils/format';
 
 type RecordingState = 'idle' | 'recording' | 'paused';
+type GpsStatus = 'finding' | 'ready' | 'unavailable';
 
 const sportGroups = [
   { id: 'gps-sports', title: 'GPS sports', items: GPS_ACTIVITY_TYPES },
@@ -62,14 +64,16 @@ export default function RecordScreen() {
   const [photoRenderFailed, setPhotoRenderFailed] = useState(false);
   const [backgroundTrackingActive, setBackgroundTrackingActive] = useState(false);
   const [backgroundTrackingWarning, setBackgroundTrackingWarning] = useState<string | null>(null);
+  const [gpsStatus, setGpsStatus] = useState<GpsStatus>('finding');
   const [savedActivity, setSavedActivity] = useState<Activity | null>(null);
-  const watchRef = useRef<LocationSubscription | null>(null);
+  const watchRef = useRef<Location.LocationSubscription | null>(null);
   const recordingStateRef = useRef<RecordingState>('idle');
   const selectedTypeRef = useRef<ActivityType>('run');
   const startedAtMsRef = useRef<number | null>(null);
   const pausedAtMsRef = useRef<number | null>(null);
   const pausedDurationMsRef = useRef(0);
   const routeRef = useRef<RoutePoint[]>([]);
+  const currentPointRef = useRef<RoutePoint | null>(null);
   const distanceMetersRef = useRef(0);
   const segmentIdRef = useRef(0);
   const backgroundTrackingAllowedRef = useRef(false);
@@ -96,6 +100,49 @@ export default function RecordScreen() {
     }));
   }, [sportSearch]);
 
+  const getCurrentLocationPoint = useCallback(
+    async ({ requestPermission = false, showLoading = false }: { requestPermission?: boolean; showLoading?: boolean } = {}) => {
+      if (Platform.OS === 'web') {
+        setGpsStatus('unavailable');
+        return null;
+      }
+
+      if (showLoading) {
+        setGpsStatus('finding');
+      }
+
+      try {
+        if (requestPermission) {
+          const permission = await Location.requestForegroundPermissionsAsync();
+          if (permission.status !== 'granted') {
+            setGpsStatus('unavailable');
+            return null;
+          }
+        }
+
+        const location = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.BestForNavigation
+        });
+        const point = routePointFromLocation(location);
+
+        if (!point) {
+          setGpsStatus(currentPointRef.current ? 'ready' : 'unavailable');
+          return null;
+        }
+
+        currentPointRef.current = point;
+        setCurrentPoint(point);
+        setGpsStatus('ready');
+        return point;
+      } catch (caught) {
+        if (__DEV__) console.warn('[LevelUp] Initial GPS fix failed', caught);
+        setGpsStatus(currentPointRef.current ? 'ready' : 'unavailable');
+        return null;
+      }
+    },
+    []
+  );
+
   const appendRoutePoint = useCallback((point: RoutePoint, forceNewSegment = false) => {
     if (recordingStateRef.current !== 'recording') return;
 
@@ -120,10 +167,12 @@ export default function RecordScreen() {
     const nextDistance = distanceMetersRef.current + result.distanceDelta;
 
     routeRef.current = nextRoute;
+    currentPointRef.current = result.point;
     distanceMetersRef.current = nextDistance;
     setRoute(nextRoute);
     setDistanceMeters(nextDistance);
     setCurrentPoint(result.point);
+    setGpsStatus('ready');
   }, []);
 
   const mergeQueuedBackgroundRoutePoints = useCallback(async () => {
@@ -153,6 +202,10 @@ export default function RecordScreen() {
   }, []);
 
   useEffect(() => {
+    void getCurrentLocationPoint({ requestPermission: true, showLoading: true });
+  }, [getCurrentLocationPoint]);
+
+  useEffect(() => {
     recordingStateRef.current = recordingState;
   }, [recordingState]);
 
@@ -163,6 +216,10 @@ export default function RecordScreen() {
   useEffect(() => {
     routeRef.current = route;
   }, [route]);
+
+  useEffect(() => {
+    currentPointRef.current = currentPoint;
+  }, [currentPoint]);
 
   useEffect(() => {
     distanceMetersRef.current = distanceMeters;
@@ -241,13 +298,19 @@ export default function RecordScreen() {
       setBackgroundTrackingWarning(null);
     }
 
+    const initialPoint = await getCurrentLocationPoint({ showLoading: true });
+    const seedPoint = initialPoint ?? currentPointRef.current;
+    const initialRoute = seedPoint ? [{ ...seedPoint, segmentId: 0 }] : [];
+
     setElapsedSeconds(0);
     setDistanceMeters(0);
-    setRoute([]);
-    setCurrentPoint(null);
-    routeRef.current = [];
+    setRoute(initialRoute);
+    setCurrentPoint(seedPoint ?? null);
+    routeRef.current = initialRoute;
+    currentPointRef.current = seedPoint ?? null;
     distanceMetersRef.current = 0;
     segmentIdRef.current = 0;
+    setGpsStatus(seedPoint ? 'ready' : 'finding');
     startedAtMsRef.current = Date.now();
     pausedAtMsRef.current = null;
     pausedDurationMsRef.current = 0;
@@ -465,7 +528,6 @@ export default function RecordScreen() {
     setElapsedSeconds(0);
     setDistanceMeters(0);
     setRoute([]);
-    setCurrentPoint(null);
     routeRef.current = [];
     distanceMetersRef.current = 0;
     startedAtMsRef.current = null;
@@ -489,9 +551,23 @@ export default function RecordScreen() {
             <StatPill label="Avg Pace" value={formatPace(elapsedSeconds, distanceMeters, units)} />
           </View>
           <View style={styles.sportBadge}>
-            <Ionicons name={selectedIsGps ? 'navigate' : 'barbell'} size={16} color={colors.primary} />
-            <AppText style={styles.sportBadgeText}>{ACTIVITY_LABELS[selectedType]}</AppText>
+            <Ionicons name={selectedIsGps ? 'navigate' : 'barbell'} size={13} color={colors.primary} />
+            <AppText style={styles.sportBadgeText} numberOfLines={1}>
+              {ACTIVITY_LABELS[selectedType]}
+            </AppText>
           </View>
+          {!currentPoint && (
+            <View style={styles.gpsSearchingBadge} pointerEvents="none">
+              <Ionicons
+                name={gpsStatus === 'finding' ? 'locate' : 'alert-circle'}
+                size={14}
+                color={gpsStatus === 'finding' ? colors.primary : colors.warning}
+              />
+              <AppText style={[styles.gpsSearchingText, { color: gpsStatus === 'finding' ? colors.primary : colors.warning }]}>
+                {gpsStatus === 'finding' ? 'Finding GPS...' : 'GPS unavailable'}
+              </AppText>
+            </View>
+          )}
           {recordingState !== 'idle' && (
             <View style={[styles.gpsModeBadge, backgroundTrackingActive ? styles.gpsModeBadgeActive : styles.gpsModeBadgeWarning]}>
               <Ionicons
@@ -507,18 +583,19 @@ export default function RecordScreen() {
         </View>
 
         <View style={styles.bottomControls}>
-          <Pressable
-            onPress={() => recordingState === 'idle' && setSportModalVisible(true)}
-            disabled={recordingState !== 'idle'}
-            style={({ pressed }) => [styles.sportButton, pressed && styles.pressed, recordingState !== 'idle' && styles.disabled]}
-          >
-            <Ionicons name={selectedIsGps ? 'walk' : 'fitness'} size={22} color={colors.primary} />
-            <AppText variant="caption" style={styles.sportButtonText}>
-              {ACTIVITY_LABELS[selectedType]}
-            </AppText>
-          </Pressable>
+          {recordingState === 'idle' && (
+            <Pressable
+              onPress={() => setSportModalVisible(true)}
+              style={({ pressed }) => [styles.sportButton, pressed && styles.pressed]}
+            >
+              <Ionicons name={selectedIsGps ? 'walk' : 'fitness'} size={22} color={colors.primary} />
+              <AppText variant="caption" style={styles.sportButtonText}>
+                {ACTIVITY_LABELS[selectedType]}
+              </AppText>
+            </Pressable>
+          )}
 
-          <View style={styles.primaryControls}>
+          <View style={[styles.primaryControls, recordingState !== 'idle' && styles.primaryControlsRecording]}>
             {selectedIsGps ? (
               <>
                 {recordingState === 'idle' && (
@@ -546,7 +623,7 @@ export default function RecordScreen() {
             )}
           </View>
 
-          <View style={styles.sideSpacer} />
+          {recordingState === 'idle' && <View style={styles.sideSpacer} />}
         </View>
       </View>
 
@@ -1021,8 +1098,9 @@ const styles = StyleSheet.create({
   },
   sportBadge: {
     position: 'absolute',
-    left: spacing.md,
-    top: spacing.md,
+    left: spacing.sm,
+    top: spacing.sm,
+    maxWidth: 132,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
@@ -1030,11 +1108,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.primary,
     backgroundColor: 'rgba(11, 22, 40, 0.78)',
-    paddingHorizontal: spacing.md,
-    minHeight: 38
+    paddingHorizontal: spacing.sm,
+    minHeight: 30
   },
   sportBadgeText: {
     color: colors.primary,
+    fontSize: 12,
+    fontWeight: '900'
+  },
+  gpsSearchingBadge: {
+    position: 'absolute',
+    left: spacing.sm,
+    top: 46,
+    minHeight: 30,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: 'rgba(11, 22, 40, 0.78)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm
+  },
+  gpsSearchingText: {
+    fontSize: 11,
     fontWeight: '900'
   },
   gpsModeBadge: {
@@ -1092,6 +1189,9 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center'
+  },
+  primaryControlsRecording: {
+    width: '100%'
   },
   startButton: {
     width: 78,
