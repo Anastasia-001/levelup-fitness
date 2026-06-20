@@ -137,12 +137,24 @@ const processSavedActivityRewards = async (
     };
   }
 
-  const rewardSummary = mapActivityRewardSummary(data) ?? null;
-  const rewardedActivity: Activity = {
+  const rpcRewardSummary = mapActivityRewardSummary(data) ?? null;
+  let rewardedActivity: Activity = {
     ...activity,
-    rewardProcessedAt: rewardSummary?.processedAt ?? new Date().toISOString(),
-    rewardSummary
+    rewardProcessedAt: rpcRewardSummary?.processedAt ?? new Date().toISOString(),
+    rewardSummary: rpcRewardSummary
   };
+  try {
+    const { data: refreshedRow, error: refreshError } = await supabase
+      .from('activities')
+      .select('*')
+      .eq('id', activity.id)
+      .single();
+    if (refreshError) throw refreshError;
+    rewardedActivity = mapActivity(refreshedRow);
+  } catch (caught) {
+    logActivitySaveError('refresh-rewarded-activity', { activity_id: activity.id }, caught);
+  }
+  const rewardSummary = rewardedActivity.rewardSummary ?? rpcRewardSummary;
   let character: Character | null = null;
   let missions: Mission[] = [];
   let sideEffectError: string | undefined;
@@ -292,9 +304,15 @@ const buildLegacyRewardSummary = (
     consistency: activity.statExp.consistency + Math.round(bonusExp * 0.35)
   },
   goldCoins: activity.expEarned + bonusExp,
+  missionGoldCoins: 0,
   missionsCompleted: missions
     .filter((mission) => Boolean(mission.completedAt))
-    .map((mission) => ({ id: mission.id, title: mission.title, rewardExp: mission.rewardExp })),
+    .map((mission) => ({
+      id: mission.id,
+      title: mission.title,
+      rewardExp: mission.rewardExp,
+      rewardCoins: 0
+    })),
   achievementsUnlocked: [],
   personalRecords: [],
   levelBefore,
@@ -406,6 +424,7 @@ export const updateActivityRewardMilestones = async (
     personalRecords: [...records.values()],
     goldCoins:
       activity.rewardSummary.characterExp +
+      (activity.rewardSummary.missionGoldCoins ?? 0) +
       achievementsUnlocked.reduce((total, achievement) => total + achievement.rewardCoins, 0)
   };
 

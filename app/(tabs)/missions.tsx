@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Modal, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Alert, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { Card } from '@/components/Card';
@@ -8,9 +8,9 @@ import { ProgressBar } from '@/components/ProgressBar';
 import { Screen } from '@/components/Screen';
 import { colors, radii, spacing } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
-import { getTodayMissions } from '@/services/missionService';
+import { getDailyRerollsRemaining, getTodayMissions, rerollMission } from '@/services/missionService';
 import { useAppStore } from '@/store/appStore';
-import { Mission } from '@/types/domain';
+import { Mission, MissionDifficulty } from '@/types/domain';
 
 export default function MissionsScreen() {
   const missions = useAppStore((state) => state.missions);
@@ -18,6 +18,9 @@ export default function MissionsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedMission, setSelectedMission] = useState<Mission | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [rerollsRemaining, setRerollsRemaining] = useState(0);
+  const [rerollingId, setRerollingId] = useState<string | null>(null);
   const today = new Date();
   const isSelectedToday = selectedDate.toDateString() === today.toDateString();
   const visibleMissions = isSelectedToday ? missions : [];
@@ -28,14 +31,67 @@ export default function MissionsScreen() {
   const xpEarned = visibleMissions
     .filter((mission) => mission.completedAt)
     .reduce((sum, mission) => sum + mission.rewardExp, 0);
+  const goldEarned = visibleMissions
+    .filter((mission) => mission.completedAt)
+    .reduce((sum, mission) => sum + mission.rewardCoins, 0);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(async ({ data }) => {
+      if (!data.user) return;
+      setUserId(data.user.id);
+      try {
+        setRerollsRemaining(await getDailyRerollsRemaining(data.user.id));
+      } catch (caught) {
+        if (__DEV__) console.warn('[LevelUp] Mission reroll status unavailable.', caught);
+      }
+    });
+  }, []);
 
   const refresh = async () => {
     setRefreshing(true);
-    const { data } = await supabase.auth.getUser();
-    if (data.user) {
-      setMissions(await getTodayMissions(data.user.id));
+    try {
+      const { data } = await supabase.auth.getUser();
+      if (data.user) {
+        setUserId(data.user.id);
+        const [nextMissions, remaining] = await Promise.all([
+          getTodayMissions(data.user.id),
+          getDailyRerollsRemaining(data.user.id)
+        ]);
+        setMissions(nextMissions);
+        setRerollsRemaining(remaining);
+      }
+    } catch (caught) {
+      Alert.alert('Could not refresh missions', caught instanceof Error ? caught.message : 'Try again.');
+    } finally {
+      setRefreshing(false);
     }
-    setRefreshing(false);
+  };
+
+  const requestReroll = (mission: Mission) => {
+    if (!userId || mission.completedAt || rerollsRemaining <= 0 || rerollingId) return;
+    Alert.alert(
+      'Reroll mission?',
+      `Replace this ${mission.difficulty} mission with a similar safe objective?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reroll',
+          onPress: async () => {
+            setRerollingId(mission.id);
+            try {
+              const replacement = await rerollMission(userId, mission, missions);
+              setMissions(missions.map((current) => (current.id === replacement.id ? replacement : current)));
+              setSelectedMission((current) => (current?.id === replacement.id ? replacement : current));
+              setRerollsRemaining(0);
+            } catch (caught) {
+              Alert.alert('Reroll unavailable', caught instanceof Error ? caught.message : 'Try again.');
+            } finally {
+              setRerollingId(null);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const weekDays = getWeekDays(selectedDate);
@@ -91,7 +147,7 @@ export default function MissionsScreen() {
             <AppText variant="caption" style={{ color: colors.primary }}>
               Daily Quest
             </AppText>
-            <AppText variant="title">Strength Training</AppText>
+            <AppText variant="title">Daily Training</AppText>
           </View>
           <View style={styles.percentBadge}>
             <AppText style={styles.percentText}>{Math.round(totalProgress * 100)}%</AppText>
@@ -100,9 +156,20 @@ export default function MissionsScreen() {
         <ProgressBar value={totalProgress} />
         <View style={styles.summaryRow}>
           <AppText muted>{completedCount}/{visibleMissions.length || 3} completed</AppText>
-          <AppText style={{ color: colors.warning, fontWeight: '900' }}>+{xpEarned} XP earned</AppText>
+          <View style={styles.earnedRewards}>
+            <AppText style={{ color: colors.primary, fontWeight: '900' }}>+{xpEarned} XP</AppText>
+            <AppText style={{ color: colors.coin, fontWeight: '900' }}>+{goldEarned} gold</AppText>
+          </View>
         </View>
-        <AppText muted>Resets in {timeUntilTomorrow()}</AppText>
+        <View style={styles.resetRow}>
+          <AppText muted>Resets in {timeUntilTomorrow()}</AppText>
+          <View style={styles.rerollStatus}>
+            <Ionicons name="refresh" size={14} color={rerollsRemaining ? colors.primary : colors.faint} />
+            <AppText variant="caption" style={{ color: rerollsRemaining ? colors.primary : colors.faint }}>
+              {rerollsRemaining} reroll remaining
+            </AppText>
+          </View>
+        </View>
 
         <View style={styles.objectives}>
           {visibleMissions.length === 0 ? (
@@ -110,18 +177,49 @@ export default function MissionsScreen() {
               <AppText muted>No quests generated for this day.</AppText>
             </View>
           ) : (
-            visibleMissions.map((mission) => (
-              <Pressable key={mission.id} onPress={() => setSelectedMission(mission)} style={styles.objectiveRow}>
+            visibleMissions.map((mission) => {
+              const accent = difficultyColor(mission.difficulty);
+              return (
+              <Pressable
+                key={mission.id}
+                onPress={() => setSelectedMission(mission)}
+                style={[styles.objectiveRow, { borderColor: accent }]}
+              >
                 <View style={styles.checkOrb}>
                   {mission.completedAt && <Ionicons name="checkmark" size={16} color={colors.black} />}
                 </View>
                 <View style={{ flex: 1 }}>
-                  <AppText>{mission.title}</AppText>
+                  <View style={styles.missionTitleRow}>
+                    <AppText style={{ flex: 1 }}>{mission.title}</AppText>
+                    <DifficultyBadge difficulty={mission.difficulty} />
+                  </View>
                   <AppText muted>{formatObjectiveProgress(mission)}</AppText>
+                  <View style={styles.missionRewards}>
+                    <AppText variant="caption" style={{ color: colors.primary }}>+{mission.rewardExp} EXP</AppText>
+                    <AppText variant="caption" style={{ color: colors.coin }}>+{mission.rewardCoins} gold</AppText>
+                  </View>
+                  {mission.optionalUnlockName && (
+                    <AppText variant="caption" style={styles.cardUnlockReward} numberOfLines={1}>
+                      Unlock: {mission.optionalUnlockName}
+                    </AppText>
+                  )}
                 </View>
+                {!mission.completedAt && rerollsRemaining > 0 && (
+                  <Pressable
+                    onPress={(event) => {
+                      event.stopPropagation();
+                      requestReroll(mission);
+                    }}
+                    disabled={Boolean(rerollingId)}
+                    style={styles.rerollIconButton}
+                  >
+                    <Ionicons name="refresh" size={17} color={colors.primary} />
+                  </Pressable>
+                )}
                 <Ionicons name="chevron-forward" size={18} color={colors.primary} />
               </Pressable>
-            ))
+              );
+            })
           )}
         </View>
 
@@ -132,7 +230,13 @@ export default function MissionsScreen() {
         />
       </Card>
 
-      <QuestDetailModal mission={selectedMission} onClose={() => setSelectedMission(null)} />
+      <QuestDetailModal
+        mission={selectedMission}
+        canReroll={Boolean(selectedMission && !selectedMission.completedAt && rerollsRemaining > 0)}
+        rerolling={selectedMission?.id === rerollingId}
+        onReroll={requestReroll}
+        onClose={() => setSelectedMission(null)}
+      />
     </Screen>
   );
 }
@@ -158,10 +262,16 @@ const timeUntilTomorrow = () => {
 };
 
 const formatObjectiveProgress = (mission: Mission) => {
-  const target = mission.type === 'distance_walk_run' ? mission.targetValue / 1000 : mission.targetValue;
-  const progress = mission.type === 'distance_walk_run' ? mission.progress / 1000 : mission.progress;
-  const suffix = mission.type === 'distance_walk_run' ? ' km' : '';
-  return `[${Math.floor(progress)}/${target}${suffix}]`;
+  if (mission.type === 'distance_walk_run') {
+    return `${(mission.progress / 1000).toFixed(1)} / ${(mission.targetValue / 1000).toFixed(1)} km`;
+  }
+  if (mission.type === 'workout_duration') {
+    return `${Math.floor(mission.progress / 60)} / ${Math.round(mission.targetValue / 60)} min`;
+  }
+  if (mission.type === 'pushups') {
+    return `${Math.floor(mission.progress)} / ${mission.targetValue} reps`;
+  }
+  return `${Math.floor(mission.progress)} / ${mission.targetValue} activities`;
 };
 
 const missionStat = (mission: Mission) => {
@@ -171,13 +281,34 @@ const missionStat = (mission: Mission) => {
   return 'CON';
 };
 
-const missionDifficulty = (mission: Mission) => {
-  if (mission.rewardExp >= 45) return 'Hard';
-  if (mission.rewardExp >= 35) return 'Normal';
-  return 'Easy';
+const difficultyColor = (difficulty: MissionDifficulty) => {
+  if (difficulty === 'easy') return colors.success;
+  if (difficulty === 'medium') return colors.primary;
+  if (difficulty === 'hard') return colors.secondary;
+  return colors.coin;
 };
 
-const QuestDetailModal = ({ mission, onClose }: { mission: Mission | null; onClose: () => void }) => (
+const DifficultyBadge = ({ difficulty }: { difficulty: MissionDifficulty }) => (
+  <View style={[styles.difficultyBadge, { borderColor: difficultyColor(difficulty) }]}>
+    <AppText variant="caption" style={{ color: difficultyColor(difficulty), fontWeight: '900' }}>
+      {difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
+    </AppText>
+  </View>
+);
+
+const QuestDetailModal = ({
+  mission,
+  canReroll,
+  rerolling,
+  onReroll,
+  onClose
+}: {
+  mission: Mission | null;
+  canReroll: boolean;
+  rerolling: boolean;
+  onReroll: (mission: Mission) => void;
+  onClose: () => void;
+}) => (
   <Modal visible={Boolean(mission)} transparent animationType="slide" onRequestClose={onClose}>
     <View style={styles.modalBackdrop}>
       {mission && (
@@ -190,40 +321,62 @@ const QuestDetailModal = ({ mission, onClose }: { mission: Mission | null; onClo
               <Ionicons name="close" size={22} color={colors.text} />
             </Pressable>
           </View>
-          <View style={styles.titleCard}>
-            <AppText variant="title">{mission.title}</AppText>
-            <AppText muted>Complete this physical objective to earn bonus EXP.</AppText>
-          </View>
-          <View style={styles.detailGrid}>
-            <DetailTile label="Reward" value={`+${mission.rewardExp} XP`} />
-            <DetailTile label="Stat" value={missionStat(mission)} />
-            <DetailTile label="Difficulty" value={missionDifficulty(mission)} />
-            <DetailTile label="Time" value="Today" />
-          </View>
-          <View>
-            <AppText variant="subtitle">Description</AppText>
-            <AppText muted>Log matching real-world activity before the daily reset. No penalties, just progress.</AppText>
-          </View>
-          <View>
-            <AppText variant="subtitle">Objectives</AppText>
-            <View style={styles.objectiveRow}>
-              <View style={styles.checkOrb}>{mission.completedAt && <Ionicons name="checkmark" size={16} color={colors.black} />}</View>
-              <AppText>{formatObjectiveProgress(mission)}</AppText>
+          <ScrollView contentContainerStyle={styles.detailContent} showsVerticalScrollIndicator={false}>
+            <View style={[styles.titleCard, { borderColor: difficultyColor(mission.difficulty) }]}>
+              <View style={styles.missionTitleRow}>
+                <AppText variant="title" style={{ flex: 1 }}>{mission.title}</AppText>
+                <DifficultyBadge difficulty={mission.difficulty} />
+              </View>
+              <AppText muted>Complete this physical objective to earn its listed rewards.</AppText>
             </View>
-          </View>
-          <PrimaryButton label={mission.completedAt ? 'Quest Complete' : 'Complete Quest'} onPress={onClose} disabled={!mission.completedAt} />
+            <View style={styles.detailGrid}>
+              <DetailTile label="EXP" value={`+${mission.rewardExp}`} />
+              <DetailTile label="Gold" value={`+${mission.rewardCoins}`} accent={colors.coin} />
+              <DetailTile label="Stat" value={missionStat(mission)} />
+              <DetailTile label="Time limit" value="Today" />
+            </View>
+            {mission.optionalUnlockName && (
+              <View style={styles.unlockReward}>
+                <Ionicons name="ribbon-outline" size={20} color={colors.coin} />
+                <View style={{ flex: 1 }}>
+                  <AppText variant="caption" style={{ color: colors.coin }}>OPTIONAL UNLOCK</AppText>
+                  <AppText>{mission.optionalUnlockName}</AppText>
+                </View>
+              </View>
+            )}
+            <View>
+              <AppText variant="subtitle">Description</AppText>
+              <AppText muted>Log matching real-world activity before the daily reset. There are no penalties for an incomplete mission.</AppText>
+            </View>
+            <View>
+              <AppText variant="subtitle">Objective</AppText>
+              <View style={styles.objectiveRow}>
+                <View style={styles.checkOrb}>{mission.completedAt && <Ionicons name="checkmark" size={16} color={colors.black} />}</View>
+                <AppText>{formatObjectiveProgress(mission)}</AppText>
+              </View>
+            </View>
+            {canReroll && (
+              <PrimaryButton
+                label={rerolling ? 'Rerolling...' : 'Use daily reroll'}
+                variant="secondary"
+                onPress={() => onReroll(mission)}
+                disabled={rerolling}
+              />
+            )}
+            <PrimaryButton label={mission.completedAt ? 'Quest Complete' : 'Keep Training'} onPress={onClose} />
+          </ScrollView>
         </View>
       )}
     </View>
   </Modal>
 );
 
-const DetailTile = ({ label, value }: { label: string; value: string }) => (
+const DetailTile = ({ label, value, accent = colors.primary }: { label: string; value: string; accent?: string }) => (
   <View style={styles.detailTile}>
     <AppText variant="caption" muted>
       {label}
     </AppText>
-    <AppText style={styles.detailValue}>{value}</AppText>
+    <AppText style={[styles.detailValue, { color: accent }]}>{value}</AppText>
   </View>
 );
 
@@ -303,6 +456,27 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md
   },
+  earnedRewards: {
+    alignItems: 'flex-end',
+    gap: spacing.xxs
+  },
+  resetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm
+  },
+  rerollStatus: {
+    minHeight: 30,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.cardHigh,
+    paddingHorizontal: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs
+  },
   objectives: {
     gap: spacing.sm
   },
@@ -316,6 +490,40 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm
+  },
+  missionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm
+  },
+  missionRewards: {
+    marginTop: spacing.xs,
+    flexDirection: 'row',
+    gap: spacing.sm
+  },
+  cardUnlockReward: {
+    marginTop: spacing.xs,
+    color: colors.coin,
+    fontWeight: '800'
+  },
+  difficultyBadge: {
+    minHeight: 26,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    backgroundColor: colors.black,
+    paddingHorizontal: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  rerollIconButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   checkOrb: {
     width: 28,
@@ -333,6 +541,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end'
   },
   modalCard: {
+    maxHeight: '92%',
     backgroundColor: colors.card,
     borderTopLeftRadius: radii.lg,
     borderTopRightRadius: radii.lg,
@@ -340,6 +549,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: spacing.lg,
     gap: spacing.md
+  },
+  detailContent: {
+    gap: spacing.md,
+    paddingBottom: spacing.lg
   },
   modalHeader: {
     flexDirection: 'row',
@@ -378,7 +591,17 @@ const styles = StyleSheet.create({
     padding: spacing.sm
   },
   detailValue: {
-    color: colors.primary,
     fontWeight: '900'
+  },
+  unlockReward: {
+    minHeight: 58,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.coin,
+    backgroundColor: 'rgba(255, 214, 110, 0.08)',
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm
   }
 });

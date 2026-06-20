@@ -509,6 +509,7 @@ export default function RecordScreen() {
                 personalRecords,
                 goldCoins:
                   currentRewardSummary.characterExp +
+                  (currentRewardSummary.missionGoldCoins ?? 0) +
                   achievementsUnlocked.reduce((total, achievement) => total + achievement.rewardCoins, 0)
               }
             };
@@ -1382,12 +1383,20 @@ const RewardBreakdown = ({
             )}
 
             {summary.missionsCompleted.map((mission) => (
-              <RewardEvent
-                key={`reward-mission-${mission.id}`}
-                icon="checkmark-circle"
-                label="Mission Complete"
-                value={mission.title}
-              />
+              <View key={`reward-mission-${mission.id}`} style={styles.rewardEventGroup}>
+                <RewardEvent
+                  icon="checkmark-circle"
+                  label="Mission Complete"
+                  value={`${mission.title} (+${mission.rewardExp} EXP, +${mission.rewardCoins ?? 0} gold)`}
+                />
+                {mission.optionalUnlockName && (
+                  <RewardEvent
+                    icon="ribbon"
+                    label="Badge Unlocked"
+                    value={mission.optionalUnlockName}
+                  />
+                )}
+              </View>
             ))}
             {summary.achievementsUnlocked.map((achievement) => (
               <RewardEvent
@@ -1943,6 +1952,9 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.sm
+  },
+  rewardEventGroup: {
     gap: spacing.sm
   },
   levelReward: {

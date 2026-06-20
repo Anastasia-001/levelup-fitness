@@ -165,11 +165,15 @@ export const mapActivityRewardSummary = (value: unknown): Activity['rewardSummar
       consistency: numberOrZero(statExp.consistency)
     },
     goldCoins: numberOrZero(summary.goldCoins),
+    missionGoldCoins: numberOrZero(summary.missionGoldCoins),
     missionsCompleted: Array.isArray(summary.missionsCompleted)
       ? summary.missionsCompleted.filter(isRewardMission).map((mission) => ({
           id: String(mission.id),
           title: String(mission.title),
-          rewardExp: numberOrZero(mission.rewardExp)
+          rewardExp: numberOrZero(mission.rewardExp),
+          rewardCoins: numberOrZero(mission.rewardCoins),
+          optionalUnlockId: nullableString(mission.optionalUnlockId),
+          optionalUnlockName: nullableString(mission.optionalUnlockName)
         }))
       : [],
     achievementsUnlocked: Array.isArray(summary.achievementsUnlocked)
@@ -197,6 +201,9 @@ const numberOrZero = (value: unknown) => {
   return Number.isFinite(number) ? number : 0;
 };
 
+const nullableString = (value: unknown) =>
+  typeof value === 'string' && value.length > 0 ? value : null;
+
 const isRewardMission = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && 'id' in value && 'title' in value);
 
@@ -209,21 +216,31 @@ export const mapMission = (row: {
   id: string;
   user_id: string;
   mission_date: string;
+  template_id?: string;
   type: Mission['type'];
   title: string;
+  difficulty?: Mission['difficulty'];
   target_value: number;
   progress: number;
   reward_exp: number;
+  reward_coins?: number;
+  optional_unlock_id?: string | null;
+  optional_unlock_name?: string | null;
   completed_at: string | null;
 }): Mission => ({
   id: row.id,
   userId: row.user_id,
   missionDate: row.mission_date,
+  templateId: row.template_id ?? `legacy-${row.type}`,
   type: row.type,
   title: row.title,
+  difficulty: row.difficulty ?? (row.reward_exp <= 35 ? 'easy' : 'medium'),
   targetValue: row.target_value,
   progress: row.progress,
   rewardExp: row.reward_exp,
+  rewardCoins: row.reward_coins ?? (row.reward_exp <= 35 ? 8 : 20),
+  optionalUnlockId: row.optional_unlock_id,
+  optionalUnlockName: row.optional_unlock_name,
   completedAt: row.completed_at
 });
 

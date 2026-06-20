@@ -42,7 +42,15 @@ export type ActivityRewardSummary = {
   missionBonusExp: number;
   statExp: Record<StatKey, number>;
   goldCoins: number;
-  missionsCompleted: { id: string; title: string; rewardExp: number }[];
+  missionGoldCoins?: number;
+  missionsCompleted: {
+    id: string;
+    title: string;
+    rewardExp: number;
+    rewardCoins?: number;
+    optionalUnlockId?: string | null;
+    optionalUnlockName?: string | null;
+  }[];
   achievementsUnlocked: { id: string; title: string; rewardCoins: number }[];
   personalRecords: { recordType: PersonalRecordType; sportKey: ActivityType | 'all' }[];
   levelBefore?: number | null;
@@ -127,15 +135,22 @@ export type MissionType =
   | 'pushups'
   | 'workout_duration';
 
+export type MissionDifficulty = 'easy' | 'medium' | 'hard' | 'boss';
+
 export type Mission = {
   id: string;
   userId: string;
   missionDate: string;
+  templateId: string;
   type: MissionType;
   title: string;
+  difficulty: MissionDifficulty;
   targetValue: number;
   progress: number;
   rewardExp: number;
+  rewardCoins: number;
+  optionalUnlockId?: string | null;
+  optionalUnlockName?: string | null;
   completedAt?: string | null;
 };
 
@@ -347,29 +362,44 @@ export type Database = {
           id: string;
           user_id: string;
           mission_date: string;
+          template_id: string;
           type: MissionType;
           title: string;
+          difficulty: MissionDifficulty;
           target_value: number;
           progress: number;
           reward_exp: number;
+          reward_coins: number;
+          optional_unlock_id: string | null;
+          optional_unlock_name: string | null;
           completed_at: string | null;
         };
         Insert: {
           user_id: string;
           mission_date: string;
+          template_id: string;
           type: MissionType;
           title: string;
+          difficulty: MissionDifficulty;
           target_value: number;
           progress?: number;
           reward_exp: number;
+          reward_coins: number;
+          optional_unlock_id?: string | null;
+          optional_unlock_name?: string | null;
           completed_at?: string | null;
         };
         Update: {
           type?: MissionType;
+          template_id?: string;
           title?: string;
+          difficulty?: MissionDifficulty;
           target_value?: number;
           progress?: number;
           reward_exp?: number;
+          reward_coins?: number;
+          optional_unlock_id?: string | null;
+          optional_unlock_name?: string | null;
           completed_at?: string | null;
         };
         Relationships: [];
@@ -491,6 +521,31 @@ export type Database = {
         Update: never;
         Relationships: [];
       };
+      mission_daily_rerolls: {
+        Row: {
+          user_id: string;
+          mission_date: string;
+          mission_id: string;
+          original_mission: unknown;
+          replacement_template_id: string;
+          used_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      user_mission_unlocks: {
+        Row: {
+          user_id: string;
+          unlock_id: string;
+          unlock_name: string;
+          mission_id: string | null;
+          unlocked_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -518,11 +573,16 @@ export type Database = {
         Args: { p_level: number };
         Returns: Database['public']['Tables']['level_up_celebrations']['Row'];
       };
+      reroll_daily_mission: {
+        Args: { p_mission_id: string; p_replacement: unknown };
+        Returns: Database['public']['Tables']['missions']['Row'];
+      };
     };
     Enums: {
       unit_preference: UnitPreference;
       activity_type: ActivityType;
       mission_type: MissionType;
+      mission_difficulty: MissionDifficulty;
     };
     CompositeTypes: Record<string, never>;
   };
