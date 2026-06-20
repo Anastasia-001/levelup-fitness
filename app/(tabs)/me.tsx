@@ -7,18 +7,25 @@ import { Card } from '@/components/Card';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { Screen } from '@/components/Screen';
 import { TextField } from '@/components/TextField';
+import { ACHIEVEMENTS } from '@/constants/achievements';
+import { ACTIVITY_LABELS } from '@/constants/activities';
 import { colors, radii, spacing } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { updateProfile } from '@/services/profileService';
 import { useAppStore } from '@/store/appStore';
-import { Profile, UnitPreference } from '@/types/domain';
+import { PersonalRecord, Profile, UnitPreference, UserAchievement } from '@/types/domain';
 import { formatDistance, formatDuration } from '@/utils/format';
+import { formatPersonalRecordValue, PERSONAL_RECORD_LABELS } from '@/utils/progression';
 
 export default function MeScreen() {
   const profile = useAppStore((state) => state.profile);
   const activities = useAppStore((state) => state.activities);
+  const streaks = useAppStore((state) => state.progressionStreaks);
+  const achievements = useAppStore((state) => state.achievements);
+  const personalRecords = useAppStore((state) => state.personalRecords);
   const units = profile?.unitPreference ?? 'metric';
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [achievementsVisible, setAchievementsVisible] = useState(false);
   const totalDistance = activities.reduce((sum, activity) => sum + (activity.distanceMeters ?? 0), 0);
   const totalDuration = activities.reduce((sum, activity) => sum + activity.durationSeconds, 0);
   const totalExp = activities.reduce((sum, activity) => sum + activity.expEarned, 0);
@@ -48,6 +55,43 @@ export default function MeScreen() {
         <SummaryTile label="EXP" value={String(totalExp)} />
       </View>
 
+      <View>
+        <AppText variant="caption" style={{ color: colors.primary }}>
+          Consistency
+        </AppText>
+        <AppText variant="subtitle">Activity streaks</AppText>
+      </View>
+      <View style={styles.streakGrid}>
+        <StreakTile label="Current days" value={streaks?.currentActivityDayStreak ?? 0} icon="flame-outline" />
+        <StreakTile label="Best days" value={streaks?.longestActivityDayStreak ?? 0} icon="calendar-outline" />
+        <StreakTile label="Current weeks" value={streaks?.currentWeeklyConsistencyStreak ?? 0} icon="repeat-outline" />
+        <StreakTile label="Best weeks" value={streaks?.longestWeeklyConsistencyStreak ?? 0} icon="ribbon-outline" />
+      </View>
+      <AppText variant="caption" muted>
+        Weekly consistency target: {streaks?.weeklyTarget ?? 3} activities
+      </AppText>
+
+      <Pressable onPress={() => setAchievementsVisible(true)}>
+        <Card>
+          <View style={styles.cardHeader}>
+            <View style={styles.achievementSummary}>
+              <View style={styles.achievementIcon}>
+                <Ionicons name="trophy-outline" size={22} color={colors.warning} />
+              </View>
+              <View>
+                <AppText variant="caption" style={{ color: colors.warning }}>
+                  Achievements
+                </AppText>
+                <AppText variant="subtitle">
+                  {achievements.length}/{ACHIEVEMENTS.length} unlocked
+                </AppText>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color={colors.primary} />
+          </View>
+        </Card>
+      </Pressable>
+
       <Card>
         <View style={styles.cardHeader}>
           <View>
@@ -72,6 +116,24 @@ export default function MeScreen() {
 
       <View>
         <AppText variant="caption" style={{ color: colors.primary }}>
+          Personal bests
+        </AppText>
+        <AppText variant="subtitle">Records</AppText>
+      </View>
+      <Card>
+        {personalRecords.length ? (
+          <View style={styles.recordsList}>
+            {personalRecords.slice(0, 7).map((record) => (
+              <PersonalRecordRow key={record.id} record={record} units={units} />
+            ))}
+          </View>
+        ) : (
+          <AppText muted>Complete activities to establish your first personal records.</AppText>
+        )}
+      </Card>
+
+      <View>
+        <AppText variant="caption" style={{ color: colors.primary }}>
           Private feed
         </AppText>
         <AppText variant="title">Activity History</AppText>
@@ -79,9 +141,135 @@ export default function MeScreen() {
       <ActivityHistoryList activities={activities} units={units} />
 
       <SettingsModal visible={settingsVisible} onClose={() => setSettingsVisible(false)} />
+      <AchievementsModal
+        visible={achievementsVisible}
+        unlockedAchievements={achievements}
+        onClose={() => setAchievementsVisible(false)}
+      />
     </Screen>
   );
 }
+
+const StreakTile = ({
+  label,
+  value,
+  icon
+}: {
+  label: string;
+  value: number;
+  icon: keyof typeof Ionicons.glyphMap;
+}) => (
+  <View style={styles.streakTile}>
+    <Ionicons name={icon} size={17} color={colors.primary} />
+    <View>
+      <AppText style={styles.streakValue}>{value}</AppText>
+      <AppText variant="caption" muted numberOfLines={1}>
+        {label}
+      </AppText>
+    </View>
+  </View>
+);
+
+const PersonalRecordRow = ({
+  record,
+  units
+}: {
+  record: PersonalRecord;
+  units: UnitPreference;
+}) => (
+  <View style={styles.recordRow}>
+    <View style={styles.recordIcon}>
+      <Ionicons name="trophy-outline" size={16} color={colors.warning} />
+    </View>
+    <View style={{ flex: 1 }}>
+      <AppText style={styles.recordTitle}>{PERSONAL_RECORD_LABELS[record.recordType]}</AppText>
+      <AppText variant="caption" muted>
+        {record.sportKey === 'all' ? 'All sports' : ACTIVITY_LABELS[record.sportKey]}
+      </AppText>
+    </View>
+    <AppText style={styles.recordValue} numberOfLines={1}>
+      {formatPersonalRecordValue(record, units)}
+    </AppText>
+  </View>
+);
+
+const AchievementsModal = ({
+  visible,
+  unlockedAchievements,
+  onClose
+}: {
+  visible: boolean;
+  unlockedAchievements: UserAchievement[];
+  onClose: () => void;
+}) => {
+  const unlockedById = new Map(
+    unlockedAchievements.map((achievement) => [achievement.achievementId, achievement])
+  );
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <View style={styles.cardHeader}>
+            <View>
+              <AppText variant="caption" style={{ color: colors.warning }}>
+                Badge vault
+              </AppText>
+              <AppText variant="title">Achievements</AppText>
+            </View>
+            <Pressable onPress={onClose} style={styles.settingsButton}>
+              <Ionicons name="close" size={22} color={colors.text} />
+            </Pressable>
+          </View>
+
+          <ScrollView contentContainerStyle={styles.achievementList} showsVerticalScrollIndicator={false}>
+            {ACHIEVEMENTS.map((achievement) => {
+              const unlocked = unlockedById.get(achievement.id);
+              return (
+                <View
+                  key={achievement.id}
+                  style={[styles.achievementCard, unlocked && styles.achievementCardUnlocked]}
+                >
+                  <View style={[styles.achievementBadge, unlocked && styles.achievementBadgeUnlocked]}>
+                    <Ionicons
+                      name={achievement.icon as keyof typeof Ionicons.glyphMap}
+                      size={22}
+                      color={unlocked ? colors.warning : colors.faint}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.achievementTitleRow}>
+                      <AppText style={styles.recordTitle}>{achievement.title}</AppText>
+                      <AppText variant="caption" style={unlocked ? styles.unlockedText : styles.lockedText}>
+                        {unlocked ? (unlocked.claimedAt ? 'Claimed' : 'Unlocked') : 'Locked'}
+                      </AppText>
+                    </View>
+                    <AppText variant="caption" muted>
+                      {achievement.description}
+                    </AppText>
+                    <View style={styles.achievementMeta}>
+                      <AppText variant="caption" style={{ color: colors.primary }}>
+                        {achievement.unlockCondition}
+                      </AppText>
+                      <AppText variant="caption" style={{ color: colors.coin }}>
+                        +{achievement.rewardCoins} coins
+                      </AppText>
+                    </View>
+                    {unlocked && (
+                      <AppText variant="caption" muted>
+                        {new Date(unlocked.unlockedAt).toLocaleDateString()}
+                      </AppText>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+};
 
 const SettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () => void }) => {
   const profile = useAppStore((state) => state.profile);
@@ -280,6 +468,43 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     justifyContent: 'center'
   },
+  streakGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm
+  },
+  streakTile: {
+    width: '48.4%',
+    minHeight: 60,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.cardHigh,
+    paddingHorizontal: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm
+  },
+  streakValue: {
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: '900'
+  },
+  achievementSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm
+  },
+  achievementIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    backgroundColor: 'rgba(255, 184, 77, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -292,6 +517,34 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     justifyContent: 'space-between',
     gap: spacing.sm
+  },
+  recordsList: {
+    gap: spacing.xs
+  },
+  recordRow: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.borderDim
+  },
+  recordIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 184, 77, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  recordTitle: {
+    fontWeight: '800'
+  },
+  recordValue: {
+    maxWidth: '36%',
+    color: colors.primary,
+    fontWeight: '900',
+    textAlign: 'right'
   },
   barWrap: {
     flex: 1,
@@ -317,6 +570,57 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: spacing.lg,
     gap: spacing.md
+  },
+  achievementList: {
+    gap: spacing.sm,
+    paddingBottom: spacing.xl
+  },
+  achievementCard: {
+    minHeight: 104,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.cardHigh,
+    padding: spacing.md,
+    flexDirection: 'row',
+    gap: spacing.sm
+  },
+  achievementCardUnlocked: {
+    borderColor: colors.warning,
+    backgroundColor: 'rgba(255, 184, 77, 0.07)'
+  },
+  achievementBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  achievementBadgeUnlocked: {
+    borderColor: colors.warning,
+    backgroundColor: 'rgba(255, 184, 77, 0.12)'
+  },
+  achievementTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm
+  },
+  achievementMeta: {
+    marginTop: spacing.xs,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.sm
+  },
+  unlockedText: {
+    color: colors.warning,
+    fontWeight: '900'
+  },
+  lockedText: {
+    color: colors.faint,
+    fontWeight: '800'
   },
   settingsContent: {
     gap: spacing.md,

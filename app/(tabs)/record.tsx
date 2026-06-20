@@ -27,9 +27,11 @@ import {
 import { fallbackActivityTitle } from '@/services/mappers';
 import { getTodayMissions } from '@/services/missionService';
 import { ensureProfileAndCharacter } from '@/services/profileService';
+import { rebuildPersonalRecords, refreshProgressionMilestones } from '@/services/progressionService';
 import { useAppStore } from '@/store/appStore';
-import { Activity, ActivityType, RoutePoint } from '@/types/domain';
+import { Activity, ActivityType, PersonalRecord, RoutePoint } from '@/types/domain';
 import { formatDistance, formatDuration, formatPace } from '@/utils/format';
+import { PERSONAL_RECORD_LABELS } from '@/utils/progression';
 
 type RecordingState = 'idle' | 'recording' | 'paused';
 type GpsStatus = 'finding' | 'ready' | 'unavailable';
@@ -67,6 +69,7 @@ export default function RecordScreen() {
   const [backgroundTrackingWarning, setBackgroundTrackingWarning] = useState<string | null>(null);
   const [gpsStatus, setGpsStatus] = useState<GpsStatus>('finding');
   const [savedActivity, setSavedActivity] = useState<Activity | null>(null);
+  const [newPersonalRecords, setNewPersonalRecords] = useState<PersonalRecord[]>([]);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
   const recordingStateRef = useRef<RecordingState>('idle');
   const selectedTypeRef = useRef<ActivityType>('run');
@@ -85,6 +88,9 @@ export default function RecordScreen() {
   const updateActivity = useAppStore((state) => state.updateActivity);
   const setCharacter = useAppStore((state) => state.setCharacter);
   const setMissions = useAppStore((state) => state.setMissions);
+  const setProgressionStreaks = useAppStore((state) => state.setProgressionStreaks);
+  const setAchievements = useAppStore((state) => state.setAchievements);
+  const setPersonalRecords = useAppStore((state) => state.setPersonalRecords);
   const units = useAppStore((state) => state.profile?.unitPreference ?? 'metric');
   const selectedIsGps = isGpsActivity(selectedType);
 
@@ -440,8 +446,41 @@ export default function RecordScreen() {
         console.warn('[LevelUp] Activity saved, but a post-save side effect failed.', result.sideEffectError);
       }
 
+      let activityForSummary = result.activity;
+      try {
+        const activities = [
+          result.activity,
+          ...useAppStore.getState().activities.filter((activity) => activity.id !== result.activity.id)
+        ];
+        const progression = await refreshProgressionMilestones({
+          userId,
+          activities,
+          newActivity: result.activity
+        });
+        const recordIds = progression.newPersonalRecords.map(
+          (record) => `${record.recordType}:${record.sportKey}`
+        );
+
+        if (recordIds.length) {
+          activityForSummary = {
+            ...result.activity,
+            personalRecordIds: [...new Set([...(result.activity.personalRecordIds ?? []), ...recordIds])]
+          };
+          updateActivity(activityForSummary);
+        }
+
+        setNewPersonalRecords(progression.newPersonalRecords);
+        setProgressionStreaks(progression.streaks);
+        setAchievements(progression.achievements);
+        setPersonalRecords(progression.personalRecords);
+        setCharacter(progression.character);
+      } catch (caught) {
+        setNewPersonalRecords([]);
+        logRecordSaveError('refresh-progression-after-save', { activityId: result.activity.id }, caught);
+      }
+
       setActivityTitle('');
-      setSavedActivity(result.activity);
+      setSavedActivity(activityForSummary);
       return true;
     } catch (caught) {
       logRecordSaveError('save-workout', input, caught);
@@ -504,8 +543,26 @@ export default function RecordScreen() {
     setSportSaving(true);
     try {
       const updated = await updateActivityType(savedActivity.id, type);
-      updateActivity(updated);
-      setSavedActivity(updated);
+      const activities = useAppStore
+        .getState()
+        .activities.map((activity) => (activity.id === updated.id ? updated : activity));
+
+      try {
+        const records = await rebuildPersonalRecords(activities);
+        const activityRecords = records.filter((record) => record.activityId === updated.id);
+        const markedActivity = {
+          ...updated,
+          personalRecordIds: activityRecords.map((record) => `${record.recordType}:${record.sportKey}`)
+        };
+        setPersonalRecords(records);
+        setNewPersonalRecords(activityRecords);
+        updateActivity(markedActivity);
+        setSavedActivity(markedActivity);
+      } catch (caught) {
+        logRecordSaveError('rebuild-records-after-sport-change', { activityId: updated.id, type }, caught);
+        updateActivity(updated);
+        setSavedActivity(updated);
+      }
     } catch (caught) {
       Alert.alert('Could not update sport', caught instanceof Error ? caught.message : 'Try again.');
     } finally {
@@ -536,6 +593,7 @@ export default function RecordScreen() {
     setPhotoRenderFailed(false);
     setTitleSaving(false);
     setSportSaving(false);
+    setNewPersonalRecords([]);
     setElapsedSeconds(0);
     setDistanceMeters(0);
     setRoute([]);
@@ -679,6 +737,7 @@ export default function RecordScreen() {
         photoPreviewUri={photoPreviewUri}
         photoUploadError={photoUploadError}
         photoRenderFailed={photoRenderFailed}
+        newPersonalRecords={newPersonalRecords}
         onTitleChange={setActivityTitle}
         onSportChange={correctSavedActivityType}
         onPhotoRenderError={() => setPhotoRenderFailed(true)}
@@ -897,6 +956,7 @@ const PostActivityModal = ({
   photoPreviewUri,
   photoUploadError,
   photoRenderFailed,
+  newPersonalRecords,
   onTitleChange,
   onSportChange,
   onPhotoRenderError,
@@ -913,6 +973,7 @@ const PostActivityModal = ({
   photoPreviewUri: string | null;
   photoUploadError: string | null;
   photoRenderFailed: boolean;
+  newPersonalRecords: PersonalRecord[];
   onTitleChange: (value: string) => void;
   onSportChange: (type: ActivityType) => void;
   onPhotoRenderError: () => void;
@@ -990,6 +1051,30 @@ const PostActivityModal = ({
                 <View style={styles.photoError}>
                   <Ionicons name="warning-outline" size={18} color={colors.warning} />
                   <AppText style={styles.photoErrorText}>{photoUploadError}</AppText>
+                </View>
+              )}
+
+              {newPersonalRecords.length > 0 && (
+                <View style={styles.personalRecordBanner}>
+                  <View style={styles.personalRecordHeader}>
+                    <Ionicons name="trophy" size={22} color={colors.warning} />
+                    <View style={{ flex: 1 }}>
+                      <AppText variant="caption" style={styles.personalRecordEyebrow}>
+                        NEW PERSONAL RECORD
+                      </AppText>
+                      <AppText variant="subtitle">
+                        {newPersonalRecords.length} milestone{newPersonalRecords.length === 1 ? '' : 's'} set
+                      </AppText>
+                    </View>
+                  </View>
+                  {newPersonalRecords.map((record) => (
+                    <View key={`post-record-${record.recordType}-${record.sportKey}`} style={styles.personalRecordRow}>
+                      <AppText>{PERSONAL_RECORD_LABELS[record.recordType]}</AppText>
+                      <AppText style={styles.personalRecordSport}>
+                        {record.sportKey === 'all' ? 'All sports' : ACTIVITY_LABELS[record.sportKey]}
+                      </AppText>
+                    </View>
+                  ))}
                 </View>
               )}
 
@@ -1410,6 +1495,33 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.warning,
     fontWeight: '700'
+  },
+  personalRecordBanner: {
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    backgroundColor: 'rgba(255, 184, 77, 0.1)',
+    padding: spacing.md,
+    gap: spacing.sm
+  },
+  personalRecordHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm
+  },
+  personalRecordEyebrow: {
+    color: colors.warning,
+    fontWeight: '900'
+  },
+  personalRecordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm
+  },
+  personalRecordSport: {
+    color: colors.primary,
+    fontWeight: '800'
   },
   postPhoto: {
     width: '100%',

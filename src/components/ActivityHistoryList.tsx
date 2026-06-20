@@ -57,6 +57,13 @@ export const ActivityHistoryList = ({
                   <AppText variant="caption" style={styles.activityType}>
                     {ACTIVITY_LABELS[activity.type]}
                   </AppText>
+                  {Boolean(activity.personalRecordIds?.length) && (
+                    <View style={styles.recordBadge}>
+                      <AppText variant="caption" style={styles.recordBadgeText}>
+                        PERSONAL RECORD
+                      </AppText>
+                    </View>
+                  )}
                 </View>
                 <AppText style={styles.exp}>+{activity.expEarned} EXP</AppText>
               </View>
@@ -221,6 +228,20 @@ const styles = StyleSheet.create({
   activityType: {
     color: colors.primary,
     marginTop: spacing.xs
+  },
+  recordBadge: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    backgroundColor: 'rgba(255, 184, 77, 0.1)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xxs
+  },
+  recordBadgeText: {
+    color: colors.warning,
+    fontWeight: '900'
   },
   photo: {
     width: '100%',

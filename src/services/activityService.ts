@@ -5,6 +5,7 @@ import { Activity, ActivityInput, ActivityType, Character, Database, Mission, Ro
 import { applyExpToCharacter, calculateActivityExp, levelFromTotalExp } from '@/utils/exp';
 import { progressMissionWithActivity } from '@/utils/missions';
 import { todayKey } from '@/utils/format';
+import { localDateKey, localWeekStartKey } from '@/utils/progression';
 
 type PickedActivityPhoto = {
   uri: string;
@@ -24,7 +25,15 @@ type SaveActivityResult = {
   sideEffectError?: string;
 };
 
-const ACTIVITY_SCHEMA_DRIFT_COLUMNS = ['title', 'photo_url', 'photo_path', 'route'] as const satisfies readonly (keyof ActivityInsert)[];
+const ACTIVITY_SCHEMA_DRIFT_COLUMNS = [
+  'title',
+  'photo_url',
+  'photo_path',
+  'route',
+  'local_date',
+  'local_week_start',
+  'personal_record_ids'
+] as const satisfies readonly (keyof ActivityInsert)[];
 
 const persistCharacter = async (character: Character) => {
   const { data, error } = await supabase
@@ -63,12 +72,15 @@ export const saveActivity = async (userId: string, input: ActivityInput) => {
   const startedAt =
     input.startedAt ??
     new Date(new Date(completedAt).getTime() - input.durationSeconds * 1000).toISOString();
+  const localCompletedAt = new Date(completedAt);
   const payload: ActivityInsert = {
     user_id: userId,
     type: input.type,
     title: input.title?.trim() || fallbackActivityTitle(input.type),
     started_at: startedAt,
     completed_at: completedAt,
+    local_date: input.localDate ?? localDateKey(localCompletedAt),
+    local_week_start: input.localWeekStart ?? localWeekStartKey(localCompletedAt),
     duration_seconds: Math.max(1, Math.round(input.durationSeconds)),
     distance_meters: input.distanceMeters ?? null,
     route: normalizeRoute(input.route),
@@ -77,6 +89,7 @@ export const saveActivity = async (userId: string, input: ActivityInput) => {
     weight_kg: input.weightKg ?? null,
     photo_url: input.photoUrl ?? null,
     photo_path: input.photoPath ?? null,
+    personal_record_ids: input.personalRecordIds ?? [],
     exp_earned: expEarned,
     stat_exp: statExp
   };

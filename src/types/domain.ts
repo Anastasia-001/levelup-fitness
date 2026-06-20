@@ -23,6 +23,8 @@ export type ActivityInput = {
   title?: string;
   startedAt?: string;
   completedAt?: string;
+  localDate?: string;
+  localWeekStart?: string;
   durationSeconds: number;
   distanceMeters?: number;
   route?: RoutePoint[];
@@ -31,6 +33,7 @@ export type ActivityInput = {
   weightKg?: number;
   photoUrl?: string;
   photoPath?: string;
+  personalRecordIds?: string[];
 };
 
 export type Activity = ActivityInput & {
@@ -121,6 +124,59 @@ export type Mission = {
 
 export type MissionTemplate = Omit<Mission, 'id' | 'userId' | 'missionDate' | 'progress' | 'completedAt'>;
 
+export type AchievementCategory = 'activity' | 'mission' | 'distance' | 'consistency' | 'record' | 'character';
+
+export type AchievementDefinition = {
+  id: string;
+  title: string;
+  description: string;
+  category: AchievementCategory;
+  icon: string;
+  unlockCondition: string;
+  rewardExp: number;
+  rewardCoins: number;
+  claimRequired: boolean;
+};
+
+export type UserAchievement = {
+  userId: string;
+  achievementId: string;
+  unlockedAt: string;
+  claimedAt?: string | null;
+};
+
+export type ProgressionStreaks = {
+  userId: string;
+  currentActivityDayStreak: number;
+  longestActivityDayStreak: number;
+  currentWeeklyConsistencyStreak: number;
+  longestWeeklyConsistencyStreak: number;
+  weeklyTarget: number;
+  lastActivityDate?: string | null;
+  lastQualifiedWeekStart?: string | null;
+  updatedAt: string;
+};
+
+export type PersonalRecordType =
+  | 'fastest_1_km'
+  | 'fastest_5_km'
+  | 'longest_distance'
+  | 'longest_duration'
+  | 'fastest_average_pace'
+  | 'most_activities_week'
+  | 'highest_activity_exp';
+
+export type PersonalRecord = {
+  id: string;
+  userId: string;
+  recordType: PersonalRecordType;
+  sportKey: ActivityType | 'all';
+  value: number;
+  activityId?: string | null;
+  periodStart?: string | null;
+  achievedAt: string;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -200,6 +256,8 @@ export type Database = {
           title: string;
           started_at: string;
           completed_at: string;
+          local_date: string | null;
+          local_week_start: string | null;
           duration_seconds: number;
           distance_meters: number | null;
           route: RoutePoint[] | null;
@@ -208,6 +266,7 @@ export type Database = {
           weight_kg: number | null;
           photo_url: string | null;
           photo_path: string | null;
+          personal_record_ids: string[];
           exp_earned: number;
           stat_exp: Record<StatKey, number>;
         };
@@ -217,6 +276,8 @@ export type Database = {
           title: string;
           started_at: string;
           completed_at: string;
+          local_date?: string | null;
+          local_week_start?: string | null;
           duration_seconds: number;
           distance_meters?: number | null;
           route?: RoutePoint[] | null;
@@ -225,6 +286,7 @@ export type Database = {
           weight_kg?: number | null;
           photo_url?: string | null;
           photo_path?: string | null;
+          personal_record_ids?: string[];
           exp_earned: number;
           stat_exp: Record<StatKey, number>;
         };
@@ -233,6 +295,8 @@ export type Database = {
           title?: string;
           started_at?: string;
           completed_at?: string;
+          local_date?: string | null;
+          local_week_start?: string | null;
           duration_seconds?: number;
           distance_meters?: number | null;
           route?: RoutePoint[] | null;
@@ -241,6 +305,7 @@ export type Database = {
           weight_kg?: number | null;
           photo_url?: string | null;
           photo_path?: string | null;
+          personal_record_ids?: string[];
           exp_earned?: number;
           stat_exp?: Record<StatKey, number>;
         };
@@ -324,9 +389,85 @@ export type Database = {
         };
         Relationships: [];
       };
+      progression_streaks: {
+        Row: {
+          user_id: string;
+          current_activity_day_streak: number;
+          longest_activity_day_streak: number;
+          current_weekly_consistency_streak: number;
+          longest_weekly_consistency_streak: number;
+          weekly_target: number;
+          last_activity_date: string | null;
+          last_qualified_week_start: string | null;
+          updated_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      achievement_catalog: {
+        Row: {
+          id: string;
+          title: string;
+          description: string;
+          category: AchievementCategory;
+          icon: string;
+          condition_key: string;
+          condition_target: number;
+          reward_exp: number;
+          reward_coins: number;
+          claim_required: boolean;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      user_achievements: {
+        Row: {
+          user_id: string;
+          achievement_id: string;
+          unlocked_at: string;
+          claimed_at: string | null;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      personal_records: {
+        Row: {
+          id: string;
+          user_id: string;
+          record_type: PersonalRecordType;
+          sport_key: ActivityType | 'all';
+          value: number;
+          activity_id: string | null;
+          period_start: string | null;
+          achieved_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      refresh_progression_streaks: {
+        Args: { p_local_today: string };
+        Returns: Database['public']['Tables']['progression_streaks']['Row'];
+      };
+      unlock_achievements: {
+        Args: { p_achievement_ids: string[] };
+        Returns: Pick<Database['public']['Tables']['user_achievements']['Row'], 'achievement_id' | 'unlocked_at' | 'claimed_at'>[];
+      };
+      upsert_personal_records: {
+        Args: { p_activity_id: string; p_candidates: unknown };
+        Returns: Database['public']['Tables']['personal_records']['Row'][];
+      };
+      rebuild_personal_records: {
+        Args: { p_activity_groups: unknown };
+        Returns: Database['public']['Tables']['personal_records']['Row'][];
+      };
+    };
     Enums: {
       unit_preference: UnitPreference;
       activity_type: ActivityType;

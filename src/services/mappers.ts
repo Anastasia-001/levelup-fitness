@@ -1,4 +1,14 @@
-import { Activity, Character, Mission, Profile, RoutePoint } from '@/types/domain';
+import {
+  Activity,
+  Character,
+  Mission,
+  PersonalRecord,
+  Profile,
+  ProgressionStreaks,
+  RoutePoint,
+  UserAchievement
+} from '@/types/domain';
+import { localDateKey, localWeekStartKey } from '@/utils/progression';
 
 export const mapProfile = (row: {
   id: string;
@@ -53,6 +63,8 @@ export const mapActivity = (row: {
   title: string | null;
   started_at: string;
   completed_at: string;
+  local_date?: string | null;
+  local_week_start?: string | null;
   duration_seconds: number;
   distance_meters: number | null;
   route: unknown;
@@ -61,6 +73,7 @@ export const mapActivity = (row: {
   weight_kg: number | null;
   photo_url: string | null;
   photo_path: string | null;
+  personal_record_ids?: string[] | null;
   exp_earned: number;
   stat_exp: Activity['statExp'];
 }): Activity => ({
@@ -70,6 +83,8 @@ export const mapActivity = (row: {
   title: row.title ?? fallbackActivityTitle(row.type),
   startedAt: row.started_at,
   completedAt: row.completed_at,
+  localDate: row.local_date ?? localDateKey(new Date(row.completed_at)),
+  localWeekStart: row.local_week_start ?? localWeekStartKey(new Date(row.completed_at)),
   durationSeconds: row.duration_seconds,
   distanceMeters: row.distance_meters ?? undefined,
   route: mapRoute(row.route),
@@ -78,6 +93,7 @@ export const mapActivity = (row: {
   weightKg: row.weight_kg ?? undefined,
   photoUrl: row.photo_url ?? undefined,
   photoPath: row.photo_path ?? undefined,
+  personalRecordIds: row.personal_record_ids ?? [],
   expEarned: row.exp_earned,
   statExp: row.stat_exp
 });
@@ -145,4 +161,58 @@ export const mapMission = (row: {
   progress: row.progress,
   rewardExp: row.reward_exp,
   completedAt: row.completed_at
+});
+
+export const mapProgressionStreaks = (row: {
+  user_id: string;
+  current_activity_day_streak: number;
+  longest_activity_day_streak: number;
+  current_weekly_consistency_streak: number;
+  longest_weekly_consistency_streak: number;
+  weekly_target: number;
+  last_activity_date: string | null;
+  last_qualified_week_start: string | null;
+  updated_at: string;
+}): ProgressionStreaks => ({
+  userId: row.user_id,
+  currentActivityDayStreak: row.current_activity_day_streak,
+  longestActivityDayStreak: row.longest_activity_day_streak,
+  currentWeeklyConsistencyStreak: row.current_weekly_consistency_streak,
+  longestWeeklyConsistencyStreak: row.longest_weekly_consistency_streak,
+  weeklyTarget: row.weekly_target,
+  lastActivityDate: row.last_activity_date,
+  lastQualifiedWeekStart: row.last_qualified_week_start,
+  updatedAt: row.updated_at
+});
+
+export const mapUserAchievement = (row: {
+  user_id: string;
+  achievement_id: string;
+  unlocked_at: string;
+  claimed_at: string | null;
+}): UserAchievement => ({
+  userId: row.user_id,
+  achievementId: row.achievement_id,
+  unlockedAt: row.unlocked_at,
+  claimedAt: row.claimed_at
+});
+
+export const mapPersonalRecord = (row: {
+  id: string;
+  user_id: string;
+  record_type: PersonalRecord['recordType'];
+  sport_key: PersonalRecord['sportKey'];
+  value: number;
+  activity_id: string | null;
+  period_start: string | null;
+  achieved_at: string;
+}): PersonalRecord => ({
+  id: row.id,
+  userId: row.user_id,
+  recordType: row.record_type,
+  sportKey: row.sport_key,
+  value: Number(row.value),
+  activityId: row.activity_id,
+  periodStart: row.period_start,
+  achievedAt: row.achieved_at
 });

@@ -3,6 +3,7 @@ import { listActivities } from '@/services/activityService';
 import { getInventory } from '@/services/cosmeticService';
 import { getTodayMissions } from '@/services/missionService';
 import { getCharacter, getProfile } from '@/services/profileService';
+import { refreshProgressionMilestones } from '@/services/progressionService';
 import { useAppStore } from '@/store/appStore';
 
 export const useBootstrap = () => {
@@ -14,6 +15,9 @@ export const useBootstrap = () => {
   const setMissions = useAppStore((state) => state.setMissions);
   const setOwnedCosmetics = useAppStore((state) => state.setOwnedCosmetics);
   const setEquippedCosmetics = useAppStore((state) => state.setEquippedCosmetics);
+  const setProgressionStreaks = useAppStore((state) => state.setProgressionStreaks);
+  const setAchievements = useAppStore((state) => state.setAchievements);
+  const setPersonalRecords = useAppStore((state) => state.setPersonalRecords);
 
   const bootstrap = useCallback(
     async (userId: string) => {
@@ -34,13 +38,39 @@ export const useBootstrap = () => {
         setMissions(missions);
         setOwnedCosmetics(inventory.ownedCosmetics);
         setEquippedCosmetics(inventory.equippedCosmetics);
+
+        try {
+          const progression = await refreshProgressionMilestones({ userId, activities });
+          setProgressionStreaks(progression.streaks);
+          setAchievements(progression.achievements);
+          setPersonalRecords(progression.personalRecords);
+          setCharacter(progression.character);
+
+          if (progression.activitiesChanged) {
+            setActivities(await listActivities(userId));
+          }
+        } catch (caught) {
+          if (__DEV__) {
+            console.warn('[LevelUp] Progression milestones could not be refreshed.', caught);
+          }
+        }
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : 'Unable to load your profile.');
       } finally {
         setLoading(false);
       }
     },
-    [setActivities, setCharacter, setEquippedCosmetics, setMissions, setOwnedCosmetics, setProfile]
+    [
+      setAchievements,
+      setActivities,
+      setCharacter,
+      setEquippedCosmetics,
+      setMissions,
+      setOwnedCosmetics,
+      setPersonalRecords,
+      setProfile,
+      setProgressionStreaks
+    ]
   );
 
   return { bootstrap, loading, error };
