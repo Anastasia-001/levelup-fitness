@@ -36,15 +36,27 @@
           "location"
         ],
         "NSCameraUsageDescription": "LevelUp Fitness lets you attach a photo to a completed activity.",
-        "NSPhotoLibraryUsageDescription": "LevelUp Fitness lets you choose a photo for a completed activity."
+        "NSPhotoLibraryUsageDescription": "LevelUp Fitness lets you choose a photo for a completed activity.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.anastasia001.levelupfitness"
+      "package": "com.anastasia001.levelupfitness",
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "extra": {
       "router": {
         "origin": false
+      },
+      "eas": {
+        "projectId": "795e7894-fc94-4a58-b30e-e10cbbfdd7bf"
       }
     }
   }
