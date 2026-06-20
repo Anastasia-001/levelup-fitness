@@ -66,10 +66,18 @@ export const refreshProgressionMilestones = async ({
     throw new Error('Progression streak refresh returned no data.');
   }
 
-  const { error: unlockError } = await supabase.rpc('unlock_achievements', {
+  const { data: unlockedData, error: unlockError } = await supabase.rpc('unlock_achievements', {
     p_achievement_ids: ACHIEVEMENT_IDS
   });
   if (unlockError) throw unlockError;
+  const newAchievements = (unlockedData ?? []).map((achievement) =>
+    mapUserAchievement({
+      user_id: userId,
+      achievement_id: achievement.achievement_id,
+      unlocked_at: achievement.unlocked_at,
+      claimed_at: achievement.claimed_at
+    })
+  );
 
   const [achievements, personalRecords, character] = await Promise.all([
     listUserAchievements(userId),
@@ -80,6 +88,7 @@ export const refreshProgressionMilestones = async ({
   return {
     streaks: mapProgressionStreaks(streakRow),
     achievements,
+    newAchievements,
     personalRecords,
     newPersonalRecords,
     activitiesChanged,

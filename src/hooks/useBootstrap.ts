@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { listActivities } from '@/services/activityService';
+import { listActivities, processPendingActivityRewards } from '@/services/activityService';
 import { getInventory } from '@/services/cosmeticService';
 import { getTodayMissions } from '@/services/missionService';
 import { getCharacter, getProfile } from '@/services/profileService';
@@ -24,6 +24,14 @@ export const useBootstrap = () => {
       setLoading(true);
       setError(null);
       try {
+        try {
+          await processPendingActivityRewards(userId);
+        } catch (caught) {
+          if (__DEV__) {
+            console.warn('[LevelUp] Pending activity rewards could not be processed.', caught);
+          }
+        }
+
         const [profile, character, activities, missions, inventory] = await Promise.all([
           getProfile(userId),
           getCharacter(userId),

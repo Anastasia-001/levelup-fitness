@@ -10,10 +10,17 @@ import { FitnessMap } from '@/components/FitnessMap';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { Screen } from '@/components/Screen';
 import { TextField } from '@/components/TextField';
+import { getAchievementById } from '@/constants/achievements';
 import { ACTIVITY_LABELS, GPS_ACTIVITY_TYPES, MANUAL_ACTIVITY_TYPES, isGpsActivity } from '@/constants/activities';
 import { colors, radii, shadows, spacing } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
-import { saveActivity, updateActivityTitle, updateActivityType, uploadActivityPhoto } from '@/services/activityService';
+import {
+  saveActivity,
+  updateActivityRewardMilestones,
+  updateActivityTitle,
+  updateActivityType,
+  uploadActivityPhoto
+} from '@/services/activityService';
 import {
   clearQueuedBackgroundPoints,
   consumeQueuedBackgroundPoints,
@@ -30,7 +37,8 @@ import { ensureProfileAndCharacter } from '@/services/profileService';
 import { rebuildPersonalRecords, refreshProgressionMilestones } from '@/services/progressionService';
 import { useAppStore } from '@/store/appStore';
 import { Activity, ActivityType, PersonalRecord, RoutePoint } from '@/types/domain';
-import { formatDistance, formatDuration, formatPace } from '@/utils/format';
+import { formatDistance, formatDuration, formatPace, formatSpeed } from '@/utils/format';
+import { elevationGainMeters } from '@/utils/geo';
 import { PERSONAL_RECORD_LABELS } from '@/utils/progression';
 
 type RecordingState = 'idle' | 'recording' | 'paused';
@@ -460,14 +468,44 @@ export default function RecordScreen() {
         const recordIds = progression.newPersonalRecords.map(
           (record) => `${record.recordType}:${record.sportKey}`
         );
+        const achievementsUnlocked = progression.newAchievements.flatMap((achievement) => {
+          const definition = getAchievementById(achievement.achievementId);
+          return definition
+            ? [{ id: definition.id, title: definition.title, rewardCoins: definition.rewardCoins }]
+            : [];
+        });
+        const personalRecords = progression.newPersonalRecords.map((record) => ({
+          recordType: record.recordType,
+          sportKey: record.sportKey
+        }));
+        activityForSummary = {
+          ...result.activity,
+          personalRecordIds: [...new Set([...(result.activity.personalRecordIds ?? []), ...recordIds])]
+        };
 
-        if (recordIds.length) {
-          activityForSummary = {
-            ...result.activity,
-            personalRecordIds: [...new Set([...(result.activity.personalRecordIds ?? []), ...recordIds])]
-          };
-          updateActivity(activityForSummary);
+        const currentRewardSummary = activityForSummary.rewardSummary;
+        if (currentRewardSummary) {
+          try {
+            activityForSummary = await updateActivityRewardMilestones(activityForSummary, {
+              achievementsUnlocked,
+              personalRecords
+            });
+          } catch (caught) {
+            logRecordSaveError('persist-reward-milestones', { activityId: result.activity.id }, caught);
+            activityForSummary = {
+              ...activityForSummary,
+              rewardSummary: {
+                ...currentRewardSummary,
+                achievementsUnlocked,
+                personalRecords,
+                goldCoins:
+                  currentRewardSummary.characterExp +
+                  achievementsUnlocked.reduce((total, achievement) => total + achievement.rewardCoins, 0)
+              }
+            };
+          }
         }
+        updateActivity(activityForSummary);
 
         setNewPersonalRecords(progression.newPersonalRecords);
         setProgressionStreaks(progression.streaks);
@@ -550,10 +588,24 @@ export default function RecordScreen() {
       try {
         const records = await rebuildPersonalRecords(activities);
         const activityRecords = records.filter((record) => record.activityId === updated.id);
-        const markedActivity = {
+        let markedActivity: Activity = {
           ...updated,
           personalRecordIds: activityRecords.map((record) => `${record.recordType}:${record.sportKey}`)
         };
+        if (markedActivity.rewardSummary) {
+          try {
+            markedActivity = await updateActivityRewardMilestones(markedActivity, {
+              achievementsUnlocked: markedActivity.rewardSummary.achievementsUnlocked,
+              personalRecords: activityRecords.map((record) => ({
+                recordType: record.recordType,
+                sportKey: record.sportKey
+              })),
+              replacePersonalRecords: true
+            });
+          } catch (caught) {
+            logRecordSaveError('persist-records-after-sport-change', { activityId: updated.id, type }, caught);
+          }
+        }
         setPersonalRecords(records);
         setNewPersonalRecords(activityRecords);
         updateActivity(markedActivity);
@@ -983,8 +1035,16 @@ const PostActivityModal = ({
 }) => {
   const insets = useSafeAreaInsets();
   const [sportPickerVisible, setSportPickerVisible] = useState(false);
+  const [mediaTab, setMediaTab] = useState<'map' | 'photo'>('map');
   const photoUri = photoPreviewUri || activity?.photoUrl;
+  const hasRoute = Boolean(activity?.route?.length);
+  const hasPhoto = Boolean(photoUri && !photoRenderFailed);
+  const elevation = elevationGainMeters(activity?.route);
   const sportEditingDisabled = uploading || titleSaving || sportSaving;
+
+  useEffect(() => {
+    setMediaTab(hasRoute ? 'map' : hasPhoto ? 'photo' : 'map');
+  }, [activity?.id, hasPhoto, hasRoute]);
 
   const selectSport = (type: ActivityType) => {
     if (!activity || activity.type === type) {
@@ -1018,75 +1078,77 @@ const PostActivityModal = ({
               <View style={styles.postHeader}>
                 <View style={{ flex: 1 }}>
                   <AppText variant="caption" style={{ color: colors.success }}>
-                    ACTIVITY SAVED
+                    ACTIVITY COMPLETE
                   </AppText>
-                  <AppText variant="title">Add a photo?</AppText>
+                  <AppText variant="title">
+                    {title.trim() || activity.title || fallbackActivityTitle(activity.type)}
+                  </AppText>
+                  <AppText muted>
+                    {ACTIVITY_LABELS[activity.type]} - {new Date(activity.completedAt).toLocaleString()}
+                  </AppText>
                 </View>
                 <Pressable onPress={onClose} style={styles.iconButton}>
                   <Ionicons name="close" size={22} color={colors.text} />
                 </Pressable>
               </View>
 
-              {photoUri && !photoRenderFailed ? (
-                <Image
-                  source={{ uri: photoUri }}
-                  style={styles.postPhoto}
-                  resizeMode="cover"
-                  onError={onPhotoRenderError}
-                />
-              ) : (
-                <View style={styles.photoPlaceholder}>
-                  <View style={styles.photoIconRing}>
-                    <Ionicons name="image-outline" size={38} color={colors.primary} />
+              <View style={styles.postMediaSection}>
+                {hasRoute && hasPhoto && (
+                  <View style={styles.mediaTabs}>
+                    {(['map', 'photo'] as const).map((tab) => (
+                      <Pressable
+                        key={`post-media-${tab}`}
+                        onPress={() => setMediaTab(tab)}
+                        style={[styles.mediaTab, mediaTab === tab && styles.mediaTabActive]}
+                      >
+                        <Ionicons
+                          name={tab === 'map' ? 'map-outline' : 'image-outline'}
+                          size={16}
+                          color={mediaTab === tab ? colors.black : colors.primary}
+                        />
+                        <AppText style={mediaTab === tab && styles.mediaTabTextActive}>
+                          {tab === 'map' ? 'Map' : 'Photo'}
+                        </AppText>
+                      </Pressable>
+                    ))}
                   </View>
-                  <AppText variant="subtitle">{photoRenderFailed ? 'Photo could not be previewed' : 'No photo attached'}</AppText>
-                  <AppText muted style={styles.photoHelpText}>
-                    {photoRenderFailed
-                      ? 'Choose another image or try taking a new photo.'
-                      : 'Add a workout photo now, or finish without one.'}
-                  </AppText>
-                </View>
-              )}
+                )}
+
+                {hasRoute && mediaTab === 'map' ? (
+                  <ActivityRouteMap route={activity.route} height={260} />
+                ) : hasPhoto && photoUri ? (
+                  <Image
+                    source={{ uri: photoUri }}
+                    style={styles.postPhoto}
+                    resizeMode="cover"
+                    onError={onPhotoRenderError}
+                  />
+                ) : (
+                  <View style={styles.photoPlaceholder}>
+                    <View style={styles.photoIconRing}>
+                      <Ionicons
+                        name={photoRenderFailed ? 'warning-outline' : 'map-outline'}
+                        size={38}
+                        color={colors.primary}
+                      />
+                    </View>
+                    <AppText variant="subtitle">
+                      {photoRenderFailed ? 'Photo could not be previewed' : 'No map or photo available'}
+                    </AppText>
+                    <AppText muted style={styles.photoHelpText}>
+                      {photoRenderFailed
+                        ? 'Choose another image or switch back to the saved route.'
+                        : 'Manual activities can still be finished without media.'}
+                    </AppText>
+                  </View>
+                )}
+              </View>
               {photoUploadError && (
                 <View style={styles.photoError}>
                   <Ionicons name="warning-outline" size={18} color={colors.warning} />
                   <AppText style={styles.photoErrorText}>{photoUploadError}</AppText>
                 </View>
               )}
-
-              {newPersonalRecords.length > 0 && (
-                <View style={styles.personalRecordBanner}>
-                  <View style={styles.personalRecordHeader}>
-                    <Ionicons name="trophy" size={22} color={colors.warning} />
-                    <View style={{ flex: 1 }}>
-                      <AppText variant="caption" style={styles.personalRecordEyebrow}>
-                        NEW PERSONAL RECORD
-                      </AppText>
-                      <AppText variant="subtitle">
-                        {newPersonalRecords.length} milestone{newPersonalRecords.length === 1 ? '' : 's'} set
-                      </AppText>
-                    </View>
-                  </View>
-                  {newPersonalRecords.map((record) => (
-                    <View key={`post-record-${record.recordType}-${record.sportKey}`} style={styles.personalRecordRow}>
-                      <AppText>{PERSONAL_RECORD_LABELS[record.recordType]}</AppText>
-                      <AppText style={styles.personalRecordSport}>
-                        {record.sportKey === 'all' ? 'All sports' : ACTIVITY_LABELS[record.sportKey]}
-                      </AppText>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-            <View style={styles.routePreviewSection}>
-              <View>
-                <AppText variant="caption" style={{ color: colors.primary }}>
-                  Route
-                </AppText>
-                <AppText variant="subtitle">Workout path</AppText>
-              </View>
-              <ActivityRouteMap route={activity.route} height={220} />
-            </View>
 
             <View style={styles.titleFieldGroup}>
               <AppText variant="caption" style={{ color: colors.primary }}>
@@ -1131,13 +1193,30 @@ const PostActivityModal = ({
             </View>
 
             <View style={styles.summaryGrid}>
-              <SummaryCard label="Sport" value={ACTIVITY_LABELS[activity.type]} />
-              <SummaryCard label="Time" value={formatDuration(activity.durationSeconds)} />
+              <SummaryCard label="Duration" value={formatDuration(activity.durationSeconds)} />
               <SummaryCard
                 label="Distance"
                 value={activity.distanceMeters ? formatDistance(activity.distanceMeters, units) : 'Manual'}
               />
+              <SummaryCard
+                label={activity.type === 'bike' ? 'Avg speed' : 'Avg pace'}
+                value={
+                  isGpsActivity(activity.type)
+                    ? activity.type === 'bike'
+                      ? formatSpeed(activity.durationSeconds, activity.distanceMeters, units)
+                      : formatPace(activity.durationSeconds, activity.distanceMeters, units)
+                    : '--'
+                }
+              />
+              {elevation !== null && (
+                <SummaryCard
+                  label="Elevation"
+                  value={units === 'imperial' ? `${Math.round(elevation * 3.28084)} ft` : `${Math.round(elevation)} m`}
+                />
+              )}
             </View>
+
+            <RewardBreakdown activity={activity} fallbackRecords={newPersonalRecords} />
 
             <View style={styles.postActions}>
               <PrimaryButton label={uploading ? 'Uploading...' : 'Take photo'} onPress={onCamera} disabled={uploading || titleSaving || sportSaving} />
@@ -1211,6 +1290,132 @@ const PostActivityModal = ({
     </Modal>
   );
 };
+
+const RewardBreakdown = ({
+  activity,
+  fallbackRecords
+}: {
+  activity: Activity;
+  fallbackRecords: PersonalRecord[];
+}) => {
+  const summary = activity.rewardSummary;
+  const records = summary?.personalRecords.length
+    ? summary.personalRecords
+    : fallbackRecords.map((record) => ({ recordType: record.recordType, sportKey: record.sportKey }));
+
+  return (
+    <View style={styles.rewardPanel}>
+      <View style={styles.rewardHeader}>
+        <View>
+          <AppText variant="caption" style={{ color: colors.warning }}>
+            REWARDS
+          </AppText>
+          <AppText variant="subtitle">Training gains</AppText>
+        </View>
+        <Ionicons name="sparkles" size={24} color={colors.warning} />
+      </View>
+
+      {summary ? (
+        <>
+          <View style={styles.rewardGrid}>
+            <RewardLine icon="flash" label="Character EXP" value={`+${summary.characterExp}`} />
+            <RewardLine icon="ellipse" label="Gold Coins" value={`+${summary.goldCoins}`} coin />
+            {Object.entries(summary.statExp).map(([stat, value]) => (
+              <RewardLine
+                key={`reward-stat-${stat}`}
+                icon="trending-up"
+                label={stat.charAt(0).toUpperCase() + stat.slice(1)}
+                value={`+${value}`}
+              />
+            ))}
+          </View>
+
+          {summary.levelBefore !== null &&
+            summary.levelBefore !== undefined &&
+            summary.levelAfter !== null &&
+            summary.levelAfter !== undefined &&
+            summary.levelAfter > summary.levelBefore && (
+              <View style={styles.levelReward}>
+                <Ionicons name="star" size={20} color={colors.warning} />
+                <AppText style={styles.levelRewardText}>Level Up: {summary.levelBefore} to {summary.levelAfter}</AppText>
+              </View>
+            )}
+
+          {summary.missionsCompleted.map((mission) => (
+            <RewardEvent
+              key={`reward-mission-${mission.id}`}
+              icon="checkmark-circle"
+              label="Mission Complete"
+              value={mission.title}
+            />
+          ))}
+          {summary.achievementsUnlocked.map((achievement) => (
+            <RewardEvent
+              key={`reward-achievement-${achievement.id}`}
+              icon="medal"
+              label="Achievement Unlocked"
+              value={achievement.title}
+            />
+          ))}
+          {records.map((record) => (
+            <RewardEvent
+              key={`reward-record-${record.recordType}-${record.sportKey}`}
+              icon="trophy"
+              label="New Record"
+              value={`${PERSONAL_RECORD_LABELS[record.recordType]} - ${
+                record.sportKey === 'all' ? 'All sports' : ACTIVITY_LABELS[record.sportKey]
+              }`}
+            />
+          ))}
+        </>
+      ) : (
+        <AppText muted>Rewards are saved with this activity and will sync when progression is available.</AppText>
+      )}
+    </View>
+  );
+};
+
+const RewardLine = ({
+  icon,
+  label,
+  value,
+  coin = false
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  coin?: boolean;
+}) => (
+  <View style={styles.rewardLine}>
+    <Ionicons name={icon} size={16} color={coin ? colors.coin : colors.primary} />
+    <View style={{ flex: 1 }}>
+      <AppText variant="caption" muted>
+        {label}
+      </AppText>
+      <AppText style={[styles.rewardValue, coin && { color: colors.coin }]}>{value}</AppText>
+    </View>
+  </View>
+);
+
+const RewardEvent = ({
+  icon,
+  label,
+  value
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+}) => (
+  <View style={styles.rewardEvent}>
+    <Ionicons name={icon} size={19} color={colors.warning} />
+    <View style={{ flex: 1 }}>
+      <AppText variant="caption" style={{ color: colors.warning }}>
+        {label}
+      </AppText>
+      <AppText>{value}</AppText>
+    </View>
+  </View>
+);
 
 const SummaryCard = ({ label, value }: { label: string; value: string }) => (
   <View style={styles.summaryCard}>
@@ -1455,8 +1660,35 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md
   },
+  postMediaSection: {
+    gap: spacing.sm
+  },
+  mediaTabs: {
+    flexDirection: 'row',
+    gap: spacing.sm
+  },
+  mediaTab: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.cardHigh,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs
+  },
+  mediaTabActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary
+  },
+  mediaTabTextActive: {
+    color: colors.black,
+    fontWeight: '900'
+  },
   photoPlaceholder: {
-    minHeight: 300,
+    minHeight: 260,
     borderRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
@@ -1496,36 +1728,9 @@ const styles = StyleSheet.create({
     color: colors.warning,
     fontWeight: '700'
   },
-  personalRecordBanner: {
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.warning,
-    backgroundColor: 'rgba(255, 184, 77, 0.1)',
-    padding: spacing.md,
-    gap: spacing.sm
-  },
-  personalRecordHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm
-  },
-  personalRecordEyebrow: {
-    color: colors.warning,
-    fontWeight: '900'
-  },
-  personalRecordRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm
-  },
-  personalRecordSport: {
-    color: colors.primary,
-    fontWeight: '800'
-  },
   postPhoto: {
     width: '100%',
-    minHeight: 320,
+    height: 260,
     borderRadius: radii.lg,
     backgroundColor: colors.cardHigh
   },
@@ -1622,10 +1827,12 @@ const styles = StyleSheet.create({
   },
   summaryGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: spacing.sm
   },
   summaryCard: {
-    flex: 1,
+    flexGrow: 1,
+    flexBasis: '45%',
     minHeight: 76,
     borderRadius: radii.md,
     borderWidth: 1,
@@ -1636,6 +1843,68 @@ const styles = StyleSheet.create({
   },
   summaryValue: {
     color: colors.text,
+    fontWeight: '900'
+  },
+  rewardPanel: {
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    backgroundColor: 'rgba(255, 184, 77, 0.07)',
+    padding: spacing.md,
+    gap: spacing.sm
+  },
+  rewardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md
+  },
+  rewardGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm
+  },
+  rewardLine: {
+    flexBasis: '45%',
+    flexGrow: 1,
+    minHeight: 54,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.cardHigh,
+    paddingHorizontal: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm
+  },
+  rewardValue: {
+    color: colors.primary,
+    fontWeight: '900'
+  },
+  rewardEvent: {
+    minHeight: 54,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.cardHigh,
+    padding: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm
+  },
+  levelReward: {
+    minHeight: 52,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    backgroundColor: 'rgba(255, 184, 77, 0.12)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm
+  },
+  levelRewardText: {
+    color: colors.warning,
     fontWeight: '900'
   },
   postActions: {

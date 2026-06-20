@@ -1,7 +1,17 @@
 import { supabase } from '@/lib/supabase';
-import { fallbackActivityTitle, mapActivity, mapCharacter, mapMission } from '@/services/mappers';
+import { fallbackActivityTitle, mapActivity, mapActivityRewardSummary, mapCharacter, mapMission } from '@/services/mappers';
 import { getCharacter } from '@/services/profileService';
-import { Activity, ActivityInput, ActivityType, Character, Database, Mission, RoutePoint, StatKey } from '@/types/domain';
+import {
+  Activity,
+  ActivityInput,
+  ActivityRewardSummary,
+  ActivityType,
+  Character,
+  Database,
+  Mission,
+  RoutePoint,
+  StatKey
+} from '@/types/domain';
 import { applyExpToCharacter, calculateActivityExp, levelFromTotalExp } from '@/utils/exp';
 import { progressMissionWithActivity } from '@/utils/missions';
 import { todayKey } from '@/utils/format';
@@ -22,6 +32,7 @@ type SaveActivityResult = {
   missions: Mission[];
   expEarned: number;
   bonusExp: number;
+  rewardSummary: ActivityRewardSummary | null;
   sideEffectError?: string;
 };
 
@@ -96,7 +107,64 @@ export const saveActivity = async (userId: string, input: ActivityInput) => {
 
   const data = await insertActivity(payload);
   const activity = mapActivity(data);
-  return applyActivitySideEffects(userId, activity, expEarned, statExp);
+  return processSavedActivityRewards(userId, activity, expEarned, statExp);
+};
+
+const processSavedActivityRewards = async (
+  userId: string,
+  activity: Activity,
+  expEarned: number,
+  statExp: Record<StatKey, number>
+): Promise<SaveActivityResult> => {
+  const { data, error } = await supabase.rpc('process_activity_rewards', {
+    p_activity_id: activity.id
+  });
+
+  if (error) {
+    if (isMissingFunctionError(error, 'process_activity_rewards')) {
+      return applyActivitySideEffects(userId, activity, expEarned, statExp);
+    }
+
+    logActivitySaveError('process-activity-rewards', { activity_id: activity.id, user_id: userId }, error);
+    return {
+      activity,
+      character: null,
+      missions: [],
+      expEarned: 0,
+      bonusExp: 0,
+      rewardSummary: null,
+      sideEffectError: errorMessage(error)
+    };
+  }
+
+  const rewardSummary = mapActivityRewardSummary(data) ?? null;
+  const rewardedActivity: Activity = {
+    ...activity,
+    rewardProcessedAt: rewardSummary?.processedAt ?? new Date().toISOString(),
+    rewardSummary
+  };
+  let character: Character | null = null;
+  let missions: Mission[] = [];
+  let sideEffectError: string | undefined;
+  try {
+    [character, missions] = await Promise.all([
+      getCharacter(userId),
+      listMissionsForActivity(userId, rewardedActivity)
+    ]);
+  } catch (caught) {
+    sideEffectError = errorMessage(caught);
+    logActivitySaveError('refresh-after-activity-rewards', { activity_id: activity.id }, caught);
+  }
+
+  return {
+    activity: rewardedActivity,
+    character,
+    missions,
+    expEarned: rewardSummary?.characterExp ?? expEarned,
+    bonusExp: rewardSummary?.missionBonusExp ?? 0,
+    rewardSummary,
+    sideEffectError
+  };
 };
 
 const insertActivity = async (payload: ActivityInsert) => {
@@ -155,7 +223,26 @@ const applyActivitySideEffects = async (
 
     const afterMissions = applyMissionBonus(afterActivity, bonusExp);
     const character = await persistCharacter(afterMissions);
-    return { activity, character, missions, expEarned: expEarned + bonusExp, bonusExp, sideEffectError };
+    const rewardSummary = buildLegacyRewardSummary(
+      activity,
+      currentCharacter.level,
+      character.level,
+      bonusExp,
+      missions
+    );
+    return {
+      activity: {
+        ...activity,
+        rewardProcessedAt: rewardSummary.processedAt,
+        rewardSummary
+      },
+      character,
+      missions,
+      expEarned: expEarned + bonusExp,
+      bonusExp,
+      rewardSummary,
+      sideEffectError
+    };
   } catch (caught) {
     const message = errorMessage(caught);
     logActivitySaveError('character-side-effects', {
@@ -165,9 +252,56 @@ const applyActivitySideEffects = async (
       bonus_exp: bonusExp,
       stat_exp: statExp
     }, caught);
-    return { activity, character: null, missions, expEarned, bonusExp, sideEffectError: sideEffectError ?? message };
+    return {
+      activity,
+      character: null,
+      missions,
+      expEarned,
+      bonusExp,
+      rewardSummary: null,
+      sideEffectError: sideEffectError ?? message
+    };
   }
 };
+
+const listMissionsForActivity = async (userId: string, activity: Activity) => {
+  const missionDate = activity.localDate ?? todayKey();
+  const { data, error } = await supabase
+    .from('missions')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('mission_date', missionDate)
+    .order('id', { ascending: true });
+
+  if (error) throw error;
+  return data.map(mapMission);
+};
+
+const buildLegacyRewardSummary = (
+  activity: Activity,
+  levelBefore: number,
+  levelAfter: number,
+  bonusExp: number,
+  missions: Mission[]
+): ActivityRewardSummary => ({
+  characterExp: activity.expEarned + bonusExp,
+  activityExp: activity.expEarned,
+  missionBonusExp: bonusExp,
+  statExp: {
+    ...activity.statExp,
+    consistency: activity.statExp.consistency + Math.round(bonusExp * 0.35)
+  },
+  goldCoins: activity.expEarned + bonusExp,
+  missionsCompleted: missions
+    .filter((mission) => Boolean(mission.completedAt))
+    .map((mission) => ({ id: mission.id, title: mission.title, rewardExp: mission.rewardExp })),
+  achievementsUnlocked: [],
+  personalRecords: [],
+  levelBefore,
+  levelAfter,
+  processedAt: new Date().toISOString(),
+  legacy: true
+});
 
 export const updateActivityTitle = async (activityId: string, title: string, fallbackActivity?: Activity) => {
   const { data, error } = await supabase
@@ -240,6 +374,77 @@ export const updateActivityPhoto = async (
   return mapActivity(data);
 };
 
+export const updateActivityRewardMilestones = async (
+  activity: Activity,
+  values: {
+    achievementsUnlocked: ActivityRewardSummary['achievementsUnlocked'];
+    personalRecords: ActivityRewardSummary['personalRecords'];
+    replacePersonalRecords?: boolean;
+  }
+) => {
+  if (!activity.rewardSummary) return activity;
+
+  const achievements = new Map(
+    [...activity.rewardSummary.achievementsUnlocked, ...values.achievementsUnlocked].map((achievement) => [
+      achievement.id,
+      achievement
+    ])
+  );
+  const records = new Map(
+    [
+      ...(values.replacePersonalRecords ? [] : activity.rewardSummary.personalRecords),
+      ...values.personalRecords
+    ].map((record) => [
+      `${record.recordType}:${record.sportKey}`,
+      record
+    ])
+  );
+  const achievementsUnlocked = [...achievements.values()];
+  const rewardSummary: ActivityRewardSummary = {
+    ...activity.rewardSummary,
+    achievementsUnlocked,
+    personalRecords: [...records.values()],
+    goldCoins:
+      activity.rewardSummary.characterExp +
+      achievementsUnlocked.reduce((total, achievement) => total + achievement.rewardCoins, 0)
+  };
+
+  const { data, error } = await supabase
+    .from('activities')
+    .update({ reward_summary: rewardSummary })
+    .eq('id', activity.id)
+    .select()
+    .single();
+
+  if (error) {
+    logActivitySaveError('update-activity-reward-summary', { activity_id: activity.id }, error);
+    throw error;
+  }
+
+  return mapActivity(data);
+};
+
+export const processPendingActivityRewards = async (userId: string) => {
+  const { data, error } = await supabase
+    .from('activities')
+    .select('id')
+    .eq('user_id', userId)
+    .is('reward_processed_at', null)
+    .order('completed_at', { ascending: true });
+
+  if (error) {
+    if (isMissingColumnError(error, ['reward_processed_at'])) return;
+    throw error;
+  }
+
+  for (const activity of data) {
+    const { error: rewardError } = await supabase.rpc('process_activity_rewards', {
+      p_activity_id: activity.id
+    });
+    if (rewardError) throw rewardError;
+  }
+};
+
 const normalizeRoute = (route?: RoutePoint[]) => {
   if (!route?.length) return null;
 
@@ -288,6 +493,14 @@ const isMissingColumnError = (error: unknown, columns: readonly string[]) => {
     errorText.includes('pgrst204');
 
   return looksLikeMissingColumn && columns.some((column) => errorText.includes(column.toLowerCase()));
+};
+
+const isMissingFunctionError = (error: unknown, functionName: string) => {
+  const errorText = JSON.stringify(serializeError(error)).toLowerCase();
+  return (
+    errorText.includes(functionName.toLowerCase()) &&
+    (errorText.includes('pgrst202') || errorText.includes('schema cache') || errorText.includes('function'))
+  );
 };
 
 const errorMessage = (error: unknown) => {

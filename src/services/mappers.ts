@@ -1,8 +1,10 @@
 import {
   Activity,
+  ActivityType,
   Character,
   Mission,
   PersonalRecord,
+  PersonalRecordType,
   Profile,
   ProgressionStreaks,
   RoutePoint,
@@ -74,6 +76,8 @@ export const mapActivity = (row: {
   photo_url: string | null;
   photo_path: string | null;
   personal_record_ids?: string[] | null;
+  reward_processed_at?: string | null;
+  reward_summary?: unknown;
   exp_earned: number;
   stat_exp: Activity['statExp'];
 }): Activity => ({
@@ -94,6 +98,8 @@ export const mapActivity = (row: {
   photoUrl: row.photo_url ?? undefined,
   photoPath: row.photo_path ?? undefined,
   personalRecordIds: row.personal_record_ids ?? [],
+  rewardProcessedAt: row.reward_processed_at ?? null,
+  rewardSummary: mapActivityRewardSummary(row.reward_summary),
   expEarned: row.exp_earned,
   statExp: row.stat_exp
 });
@@ -140,6 +146,64 @@ const nullableNumber = (value: unknown) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 };
+
+export const mapActivityRewardSummary = (value: unknown): Activity['rewardSummary'] => {
+  if (!value || typeof value !== 'object') return null;
+  const summary = value as Record<string, unknown>;
+  const statExp = summary.statExp && typeof summary.statExp === 'object'
+    ? summary.statExp as Record<string, unknown>
+    : {};
+
+  return {
+    characterExp: numberOrZero(summary.characterExp),
+    activityExp: numberOrZero(summary.activityExp),
+    missionBonusExp: numberOrZero(summary.missionBonusExp),
+    statExp: {
+      endurance: numberOrZero(statExp.endurance),
+      speed: numberOrZero(statExp.speed),
+      strength: numberOrZero(statExp.strength),
+      consistency: numberOrZero(statExp.consistency)
+    },
+    goldCoins: numberOrZero(summary.goldCoins),
+    missionsCompleted: Array.isArray(summary.missionsCompleted)
+      ? summary.missionsCompleted.filter(isRewardMission).map((mission) => ({
+          id: String(mission.id),
+          title: String(mission.title),
+          rewardExp: numberOrZero(mission.rewardExp)
+        }))
+      : [],
+    achievementsUnlocked: Array.isArray(summary.achievementsUnlocked)
+      ? summary.achievementsUnlocked.filter(isRewardAchievement).map((achievement) => ({
+          id: String(achievement.id),
+          title: String(achievement.title),
+          rewardCoins: numberOrZero(achievement.rewardCoins)
+        }))
+      : [],
+    personalRecords: Array.isArray(summary.personalRecords)
+      ? summary.personalRecords.filter(isRewardRecord).map((record) => ({
+          recordType: record.recordType as PersonalRecordType,
+          sportKey: record.sportKey as ActivityType | 'all'
+        }))
+      : [],
+    levelBefore: nullableNumber(summary.levelBefore),
+    levelAfter: nullableNumber(summary.levelAfter),
+    processedAt: typeof summary.processedAt === 'string' ? summary.processedAt : new Date(0).toISOString(),
+    legacy: summary.legacy === true
+  };
+};
+
+const numberOrZero = (value: unknown) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+};
+
+const isRewardMission = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === 'object' && 'id' in value && 'title' in value);
+
+const isRewardAchievement = isRewardMission;
+
+const isRewardRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value && typeof value === 'object' && 'recordType' in value && 'sportKey' in value);
 
 export const mapMission = (row: {
   id: string;

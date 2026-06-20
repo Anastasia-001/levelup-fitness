@@ -128,11 +128,13 @@ export const ActivityRouteMap = ({
           </Marker>
         )}
       </MapView>
-      <View style={styles.badge}>
-        <AppText variant="caption" style={styles.badgeText}>
-          {validRoute.length} GPS points
-        </AppText>
-      </View>
+      {__DEV__ && (
+        <View style={styles.badge}>
+          <AppText variant="caption" style={styles.badgeText}>
+            {validRoute.length} GPS points
+          </AppText>
+        </View>
+      )}
     </View>
   );
 };

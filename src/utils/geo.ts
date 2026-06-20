@@ -28,3 +28,25 @@ export const routeDistanceMeters = (points: RoutePoint[]) =>
 
     return total + distanceBetweenMeters(points[index - 1], point);
   }, 0);
+
+export const elevationGainMeters = (points: RoutePoint[] = []) => {
+  let validPairs = 0;
+  const gain = points.reduce((total, point, index) => {
+    if (index === 0 || points[index - 1].segmentId !== point.segmentId) return total;
+    const previousAltitude = points[index - 1].altitude;
+    const altitude = point.altitude;
+    if (
+      typeof previousAltitude !== 'number' ||
+      typeof altitude !== 'number' ||
+      !Number.isFinite(previousAltitude) ||
+      !Number.isFinite(altitude)
+    ) {
+      return total;
+    }
+
+    validPairs += 1;
+    return total + Math.max(0, altitude - previousAltitude);
+  }, 0);
+
+  return validPairs > 0 && gain >= 1 ? gain : null;
+};

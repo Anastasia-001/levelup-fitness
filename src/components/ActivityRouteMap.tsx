@@ -22,9 +22,11 @@ export const ActivityRouteMap = ({ route, height = 180, style }: ActivityRouteMa
           <View style={styles.routeLine} />
           <View style={[styles.marker, styles.startMarker]} />
           <View style={[styles.marker, styles.finishMarker]} />
-          <AppText variant="caption" style={styles.routeText}>
-            {points.length} GPS points captured
-          </AppText>
+          {__DEV__ && (
+            <AppText variant="caption" style={styles.routeText}>
+              {points.length} GPS points captured
+            </AppText>
+          )}
         </>
       ) : (
         <>

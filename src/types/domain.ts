@@ -36,6 +36,21 @@ export type ActivityInput = {
   personalRecordIds?: string[];
 };
 
+export type ActivityRewardSummary = {
+  characterExp: number;
+  activityExp: number;
+  missionBonusExp: number;
+  statExp: Record<StatKey, number>;
+  goldCoins: number;
+  missionsCompleted: { id: string; title: string; rewardExp: number }[];
+  achievementsUnlocked: { id: string; title: string; rewardCoins: number }[];
+  personalRecords: { recordType: PersonalRecordType; sportKey: ActivityType | 'all' }[];
+  levelBefore?: number | null;
+  levelAfter?: number | null;
+  processedAt: string;
+  legacy?: boolean;
+};
+
 export type Activity = ActivityInput & {
   id: string;
   userId: string;
@@ -44,6 +59,8 @@ export type Activity = ActivityInput & {
   statExp: Record<StatKey, number>;
   startedAt: string;
   completedAt: string;
+  rewardProcessedAt?: string | null;
+  rewardSummary?: ActivityRewardSummary | null;
 };
 
 export type Character = {
@@ -267,6 +284,8 @@ export type Database = {
           photo_url: string | null;
           photo_path: string | null;
           personal_record_ids: string[];
+          reward_processed_at: string | null;
+          reward_summary: ActivityRewardSummary | null;
           exp_earned: number;
           stat_exp: Record<StatKey, number>;
         };
@@ -287,6 +306,8 @@ export type Database = {
           photo_url?: string | null;
           photo_path?: string | null;
           personal_record_ids?: string[];
+          reward_processed_at?: string | null;
+          reward_summary?: ActivityRewardSummary | null;
           exp_earned: number;
           stat_exp: Record<StatKey, number>;
         };
@@ -306,6 +327,8 @@ export type Database = {
           photo_url?: string | null;
           photo_path?: string | null;
           personal_record_ids?: string[];
+          reward_processed_at?: string | null;
+          reward_summary?: ActivityRewardSummary | null;
           exp_earned?: number;
           stat_exp?: Record<StatKey, number>;
         };
@@ -466,6 +489,10 @@ export type Database = {
       rebuild_personal_records: {
         Args: { p_activity_groups: unknown };
         Returns: Database['public']['Tables']['personal_records']['Row'][];
+      };
+      process_activity_rewards: {
+        Args: { p_activity_id: string };
+        Returns: ActivityRewardSummary;
       };
     };
     Enums: {
