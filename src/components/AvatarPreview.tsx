@@ -1,535 +1,252 @@
-import { StyleSheet, View } from 'react-native';
-import { colors, radii, shadows } from '@/constants/theme';
-import { CosmeticItem, EquippedCosmetics } from '@/types/domain';
+import { Image, StyleSheet, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { CHARACTER_ASSETS, CharacterAsset, CharacterPose } from '@/constants/characterAssets';
+import { colors, shadows } from '@/constants/theme';
 import { getEquippedItems } from '@/services/cosmeticService';
+import { CosmeticItem, EquippedCosmetics } from '@/types/domain';
 
 type AvatarPreviewProps = {
   equipment: EquippedCosmetics | null;
-  size?: 'large' | 'small';
+  size?: 'large' | 'wardrobe' | 'small';
+  height?: number;
+  pose?: CharacterPose;
 };
 
-export const AvatarPreview = ({ equipment, size = 'large' }: AvatarPreviewProps) => {
+const SIZE_HEIGHTS = { large: 470, wardrobe: 280, small: 220 } as const;
+
+export const AvatarPreview = ({
+  equipment,
+  size = 'large',
+  height,
+  pose = 'neutral'
+}: AvatarPreviewProps) => {
   const equipped = getEquippedItems(equipment);
-  const scale = size === 'large' ? 1.15 : 0.64;
+  const asset = CHARACTER_ASSETS[pose];
+  const stageHeight = height ?? SIZE_HEIGHTS[size];
+  const artWidth = stageHeight * (asset.canvas.width / asset.canvas.height);
+  const stageWidth = Math.max(170, stageHeight * 0.54);
 
   return (
-    <View style={[styles.wrap, { transform: [{ scale }] }]}>
-      <AuraGlow item={equipped.aura} />
-      <FrameGlow item={equipped.frame} />
-      <View style={styles.aura} />
-      <View style={styles.motionLineLeft} />
-      <View style={styles.motionLineRight} />
-      <View style={styles.hairBack} />
-      <View style={styles.hairRibbon} />
-      <View style={styles.head}>
-        <View style={styles.fringe} />
-        <View style={styles.sideLockLeft} />
-        <View style={styles.sideLockRight} />
-        <View style={styles.hairShine} />
-        <View style={styles.eyeLeft} />
-        <View style={styles.eyeRight} />
-        <View style={styles.eyeSparkLeft} />
-        <View style={styles.eyeSparkRight} />
-        <View style={styles.cheekLeft} />
-        <View style={styles.cheekRight} />
-        <View style={styles.smile} />
-      </View>
-      <Headwear item={equipped.head} />
-      <View style={styles.neck} />
-      <View
-        style={[
-          styles.torso,
-          equipped.shirt?.visual.silhouette.includes('jacket') && styles.jacketTorso,
-          equipped.shirt?.visual.silhouette.includes('singlet') && styles.singletTorso,
-          { backgroundColor: equipped.shirt?.colors.primary ?? colors.cardSoft, borderColor: equipped.shirt?.colors.secondary ?? colors.primary }
-        ]}
-      >
-        <View style={styles.collar} />
-        <View style={[styles.torsoPanel, { backgroundColor: equipped.shirt?.colors.accent ?? colors.primary }]} />
-        {equipped.shirt?.visual.pattern !== 'solid' && (
-          <View style={[styles.outfitTrim, { backgroundColor: equipped.shirt?.colors.secondary ?? colors.primary }]} />
-        )}
-        <View style={styles.torsoHighlight} />
-      </View>
-      <View style={[styles.arm, styles.armLeft]} />
-      <View style={[styles.arm, styles.armRight]} />
-      <View style={styles.waist} />
-      <View style={styles.legs}>
-        <View style={[styles.leg, { backgroundColor: equipped.pants?.colors.primary ?? '#172A4A', borderColor: equipped.pants?.colors.secondary ?? colors.borderDim }]}>
-          <View style={[styles.legStripe, equipped.pants?.visual.pattern === 'chevron' && styles.chevronTrim, { backgroundColor: equipped.pants?.colors.accent ?? colors.primary }]} />
-        </View>
-        <View style={[styles.leg, { backgroundColor: equipped.pants?.colors.primary ?? '#172A4A', borderColor: equipped.pants?.colors.secondary ?? colors.borderDim }]}>
-          <View style={[styles.legStripe, equipped.pants?.visual.pattern === 'chevron' && styles.chevronTrim, { backgroundColor: equipped.pants?.colors.accent ?? colors.primary }]} />
+    <View
+      style={[styles.stage, { width: stageWidth, height: stageHeight }]}
+      accessibilityLabel="LevelUp Fitness character wearing equipped cosmetics"
+    >
+      <Atmosphere aura={equipped.aura} frame={equipped.frame} />
+      <View style={[styles.artboard, { width: artWidth, height: stageHeight }]}>
+        <Image source={asset.source} resizeMode="contain" fadeDuration={0} style={styles.characterArt} />
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          <HeadwearOverlay item={equipped.head} anchor={asset.anchors.head} />
+          <TopOverlay item={equipped.shirt} anchor={asset.anchors.torso} />
+          <BottomOverlay item={equipped.pants} waist={asset.anchors.waist} legs={asset.anchors.legs} />
+          <ShoeOverlay item={equipped.shoes} anchor={asset.anchors.shoes} />
+          <AccessoryOverlay item={equipped.accessory} anchor={asset.anchors.wrist} />
         </View>
       </View>
-      <View style={styles.shoes}>
-        <View style={[styles.shoe, equipped.shoes?.visual.silhouette.includes('trail') && styles.trailShoe, { backgroundColor: equipped.shoes?.colors.primary ?? colors.primary, borderColor: equipped.shoes?.colors.secondary ?? colors.white }]}>
-          <View style={styles.shoeSole} />
-        </View>
-        <View style={[styles.shoe, equipped.shoes?.visual.silhouette.includes('trail') && styles.trailShoe, { backgroundColor: equipped.shoes?.colors.primary ?? colors.primary, borderColor: equipped.shoes?.colors.secondary ?? colors.white }]}>
-          <View style={styles.shoeSole} />
-        </View>
-      </View>
-      {equipped.accessory && <AccessoryOverlay item={equipped.accessory} />}
     </View>
   );
 };
 
-const Headwear = ({ item }: { item: CosmeticItem | null }) => {
-  const silhouette = item?.visual.silhouette ?? 'band';
+const Atmosphere = ({ aura, frame }: { aura: CosmeticItem | null; frame: CosmeticItem | null }) => (
+  <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+    <LinearGradient
+      colors={[
+        withAlpha(aura?.colors.primary ?? colors.secondary, aura ? 0.2 : 0.1),
+        'rgba(3, 7, 19, 0)'
+      ]}
+      start={{ x: 0.5, y: 0 }}
+      end={{ x: 0.5, y: 1 }}
+      style={styles.atmosphereGlow}
+    />
+    {aura && (
+      <>
+        <View style={[styles.auraRing, { borderColor: withAlpha(aura.colors.primary, 0.5) }]} />
+        <View style={[styles.auraRail, styles.auraRailLeft, { backgroundColor: withAlpha(aura.colors.secondary, 0.38) }]} />
+        <View style={[styles.auraRail, styles.auraRailRight, { backgroundColor: withAlpha(aura.colors.primary, 0.34) }]} />
+      </>
+    )}
+    {frame && (
+      <View style={[styles.profileFrame, { borderColor: withAlpha(frame.colors.primary, 0.54) }]}>
+        <View style={[styles.frameCorner, styles.frameCornerTopLeft, { borderColor: frame.colors.secondary }]} />
+        <View style={[styles.frameCorner, styles.frameCornerBottomRight, { borderColor: frame.colors.accent ?? frame.colors.primary }]} />
+      </View>
+    )}
+  </View>
+);
+
+const HeadwearOverlay = ({ item, anchor }: OverlayProps) => {
+  if (!item) return null;
+  const silhouette = item.visual.silhouette;
   return (
-    <>
+    <View style={[styles.anchor, anchor]}>
       {silhouette.includes('ponytail') && (
-        <View style={[styles.equippedPonytail, { backgroundColor: item?.colors.secondary ?? colors.secondary }]} />
+        <View style={[styles.ponytailAccent, { borderColor: item.colors.secondary }]} />
       )}
-      <View
-        style={[
-          styles.headband,
-          silhouette.includes('cap') && styles.equippedCap,
-          silhouette.includes('visor') && styles.equippedVisor,
-          { backgroundColor: item?.colors.primary ?? colors.primary, borderColor: item?.colors.secondary ?? colors.primary }
-        ]}
-      />
+      {silhouette.includes('cap') ? (
+        <>
+          <View style={[styles.capCrown, { backgroundColor: withAlpha(item.colors.primary, 0.92), borderColor: item.colors.secondary }]} />
+          <View style={[styles.capBrim, { backgroundColor: item.colors.accent ?? item.colors.secondary }]} />
+        </>
+      ) : (
+        <View
+          style={[
+            styles.headBand,
+            silhouette.includes('visor') && styles.visorBand,
+            { backgroundColor: withAlpha(item.colors.primary, 0.9), borderColor: item.colors.secondary }
+          ]}
+        >
+          <View style={[styles.headBandTrim, { backgroundColor: item.colors.accent ?? item.colors.secondary }]} />
+        </View>
+      )}
       {silhouette.includes('crown') && (
-        <View style={styles.equippedCrownRow}>
+        <View style={styles.crownRow}>
           {[0, 1, 2].map((point) => (
-            <View key={`avatar-crown-${point}`} style={[styles.equippedCrownPoint, { backgroundColor: item?.colors.primary }]} />
+            <View key={`character-crown-point-${point}`} style={[styles.crownPoint, { backgroundColor: item.colors.primary }]} />
           ))}
         </View>
       )}
+    </View>
+  );
+};
+
+const TopOverlay = ({ item, anchor }: OverlayProps) => {
+  if (!item) return null;
+  const jacket = item.visual.silhouette.includes('jacket');
+  const singlet = item.visual.silhouette.includes('singlet');
+  return (
+    <View style={[styles.anchor, anchor]}>
+      <LinearGradient
+        colors={[withAlpha(item.colors.primary, 0.34), 'rgba(0, 0, 0, 0)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.topTint, jacket && styles.jacketTint, singlet && styles.singletTint]}
+      />
+      <View style={[styles.leftLapel, { borderColor: item.colors.secondary }]} />
+      <View style={[styles.rightLapel, { borderColor: item.colors.secondary }]} />
+      <View
+        style={[
+          styles.chestTrim,
+          item.visual.pattern === 'chevron' && styles.chevronChestTrim,
+          { backgroundColor: item.colors.accent ?? item.colors.secondary }
+        ]}
+      />
+      {jacket && <View style={[styles.jacketZip, { backgroundColor: item.colors.accent ?? colors.white }]} />}
+    </View>
+  );
+};
+
+const BottomOverlay = ({ item, waist, legs }: { item: CosmeticItem | null; waist: OverlayProps['anchor']; legs: OverlayProps['anchor'] }) => {
+  if (!item) return null;
+  const shorts = item.visual.silhouette.includes('shorts');
+  return (
+    <>
+      <View style={[styles.anchor, waist]}>
+        <View style={[styles.waistTrim, { backgroundColor: withAlpha(item.colors.secondary, 0.88) }]} />
+        <View style={[styles.waistTab, { backgroundColor: item.colors.accent ?? item.colors.primary }]} />
+      </View>
+      <View style={[styles.anchor, legs]}>
+        <LinearGradient
+          colors={[withAlpha(item.colors.primary, shorts ? 0.26 : 0.2), 'rgba(0, 0, 0, 0)']}
+          style={[styles.legTint, shorts && styles.shortsTint]}
+        />
+        <View style={[styles.legRail, { backgroundColor: item.colors.secondary }]}>
+          <View style={[styles.legRailAccent, { backgroundColor: item.colors.accent ?? item.colors.primary }]} />
+        </View>
+      </View>
     </>
   );
 };
 
-const AccessoryOverlay = ({ item }: { item: CosmeticItem }) => (
-  <View
-    style={[
-      styles.accessory,
-      item.visual.silhouette.includes('towel') && styles.towelAccessory,
-      item.visual.silhouette.includes('sleeve') && styles.sleeveAccessory,
-      { backgroundColor: item.colors.primary, borderColor: item.colors.secondary }
-    ]}
-  >
-    <View style={[styles.accessoryDetail, { backgroundColor: item.colors.accent ?? item.colors.secondary }]} />
-  </View>
-);
-
-const FrameGlow = ({ item }: { item: CosmeticItem | null }) =>
-  item ? <View style={[styles.frameGlow, { borderColor: item.colors.primary, backgroundColor: item.colors.secondary }]} /> : null;
-
-const AuraGlow = ({ item }: { item: CosmeticItem | null }) =>
-  item ? (
-    <View style={[styles.equippedAura, { borderColor: item.colors.primary, backgroundColor: item.colors.secondary }]}>
-      <View style={[styles.equippedAuraCore, { borderColor: item.colors.accent ?? item.colors.primary }]} />
+const ShoeOverlay = ({ item, anchor }: OverlayProps) => {
+  if (!item) return null;
+  return (
+    <View style={[styles.anchor, anchor, styles.shoeRow]}>
+      {[0, 1].map((shoe) => (
+        <View
+          key={`character-shoe-overlay-${shoe}`}
+          style={[styles.shoeAccent, { borderColor: item.colors.secondary, backgroundColor: withAlpha(item.colors.primary, 0.32) }]}
+        >
+          <View style={[styles.shoeSlash, { backgroundColor: item.colors.accent ?? item.colors.secondary }]} />
+        </View>
+      ))}
     </View>
-  ) : null;
+  );
+};
+
+const AccessoryOverlay = ({ item, anchor }: OverlayProps) => {
+  if (!item) return null;
+  const towel = item.visual.silhouette.includes('towel');
+  const sleeve = item.visual.silhouette.includes('sleeve');
+  return (
+    <View
+      style={[
+        styles.anchor,
+        anchor,
+        styles.wristAccessory,
+        towel && styles.towelAccessory,
+        sleeve && styles.sleeveAccessory,
+        { borderColor: item.colors.secondary, backgroundColor: withAlpha(item.colors.primary, 0.9) }
+      ]}
+    >
+      <View style={[styles.accessoryFace, { backgroundColor: item.colors.accent ?? item.colors.secondary }]} />
+    </View>
+  );
+};
+
+type OverlayProps = {
+  item: CosmeticItem | null;
+  anchor: CharacterAsset['anchors']['head'];
+};
+
+const withAlpha = (hex: string, alpha: number) => {
+  if (!hex.startsWith('#') || (hex.length !== 7 && hex.length !== 4)) return hex;
+  const normalized = hex.length === 4
+    ? `${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`
+    : hex.slice(1);
+  const channels = normalized.match(/.{2}/g)?.map((channel) => Number.parseInt(channel, 16));
+  return channels ? `rgba(${channels[0]}, ${channels[1]}, ${channels[2]}, ${alpha})` : hex;
+};
 
 const styles = StyleSheet.create({
-  wrap: {
-    width: 230,
-    height: 330,
-    alignItems: 'center'
-  },
-  frameGlow: {
-    position: 'absolute',
-    top: 30,
-    width: 208,
-    height: 260,
-    borderRadius: 58,
-    borderWidth: 3,
-    opacity: 0.42,
-    ...shadows.purpleGlow
-  },
-  equippedAura: {
-    position: 'absolute',
-    top: 18,
-    width: 224,
-    height: 292,
-    borderRadius: 82,
-    borderWidth: 4,
-    opacity: 0.2,
-    ...shadows.cyanGlow
-  },
-  equippedAuraCore: {
-    position: 'absolute',
-    top: 18,
-    bottom: 18,
-    left: 18,
-    right: 18,
-    borderRadius: 70,
-    borderWidth: 2
-  },
-  aura: {
-    position: 'absolute',
-    top: 44,
-    width: 188,
-    height: 250,
-    borderRadius: 74,
-    backgroundColor: colors.secondarySoft
-  },
-  motionLineLeft: {
-    position: 'absolute',
-    top: 72,
-    left: 26,
-    width: 4,
-    height: 112,
-    borderRadius: 4,
-    backgroundColor: 'rgba(53, 246, 255, 0.18)',
-    transform: [{ rotate: '18deg' }]
-  },
-  motionLineRight: {
-    position: 'absolute',
-    top: 92,
-    right: 28,
-    width: 4,
-    height: 128,
-    borderRadius: 4,
-    backgroundColor: 'rgba(143, 92, 255, 0.24)',
-    transform: [{ rotate: '-15deg' }]
-  },
-  hairBack: {
-    position: 'absolute',
-    top: 26,
-    width: 100,
-    height: 104,
-    borderTopLeftRadius: 48,
-    borderTopRightRadius: 48,
-    borderBottomLeftRadius: 28,
-    borderBottomRightRadius: 28,
-    backgroundColor: '#17213B',
-    zIndex: 3
-  },
-  hairRibbon: {
-    position: 'absolute',
-    top: 92,
-    width: 92,
-    height: 34,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    backgroundColor: '#10182F',
-    zIndex: 2
-  },
-  head: {
-    width: 70,
-    height: 76,
-    borderRadius: 30,
-    backgroundColor: '#F3CBA9',
-    borderWidth: 2,
-    borderColor: '#FFE2C7',
-    marginTop: 42,
-    zIndex: 5,
-    alignItems: 'center'
-  },
-  fringe: {
-    position: 'absolute',
-    top: -8,
-    width: 72,
-    height: 28,
-    borderTopLeftRadius: 26,
-    borderTopRightRadius: 26,
-    borderBottomLeftRadius: 14,
-    borderBottomRightRadius: 20,
-    backgroundColor: '#17213B',
-    zIndex: 7
-  },
-  sideLockLeft: {
-    position: 'absolute',
-    top: 8,
-    left: -8,
-    width: 18,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: '#17213B',
-    transform: [{ rotate: '10deg' }],
-    zIndex: 6
-  },
-  sideLockRight: {
-    position: 'absolute',
-    top: 7,
-    right: -8,
-    width: 18,
-    height: 50,
-    borderRadius: 12,
-    backgroundColor: '#17213B',
-    transform: [{ rotate: '-10deg' }],
-    zIndex: 6
-  },
-  hairShine: {
-    position: 'absolute',
-    top: 1,
-    left: 19,
-    width: 22,
-    height: 6,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    zIndex: 8,
-    transform: [{ rotate: '-12deg' }]
-  },
-  eyeLeft: {
-    position: 'absolute',
-    top: 31,
-    left: 18,
-    width: 8,
-    height: 12,
-    borderRadius: 4,
-    backgroundColor: '#0A1428'
-  },
-  eyeRight: {
-    position: 'absolute',
-    top: 31,
-    right: 18,
-    width: 8,
-    height: 12,
-    borderRadius: 4,
-    backgroundColor: '#0A1428'
-  },
-  eyeSparkLeft: {
-    position: 'absolute',
-    top: 33,
-    left: 21,
-    width: 3,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: colors.white,
-    zIndex: 8
-  },
-  eyeSparkRight: {
-    position: 'absolute',
-    top: 33,
-    right: 21,
-    width: 3,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: colors.white,
-    zIndex: 8
-  },
-  cheekLeft: {
-    position: 'absolute',
-    top: 45,
-    left: 12,
-    width: 10,
-    height: 4,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255, 92, 138, 0.34)'
-  },
-  cheekRight: {
-    position: 'absolute',
-    top: 45,
-    right: 12,
-    width: 10,
-    height: 4,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255, 92, 138, 0.34)'
-  },
-  smile: {
-    position: 'absolute',
-    bottom: 17,
-    width: 18,
-    height: 7,
-    borderBottomWidth: 2,
-    borderColor: '#9E5D62',
-    borderRadius: 10
-  },
-  headband: {
-    position: 'absolute',
-    top: 55,
-    width: 82,
-    height: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    zIndex: 6,
-    ...shadows.cyanGlow
-  },
-  equippedCap: {
-    top: 39,
-    width: 88,
-    height: 28,
-    borderTopLeftRadius: 36,
-    borderTopRightRadius: 36,
-    borderBottomLeftRadius: 12,
-    borderBottomRightRadius: 20
-  },
-  equippedVisor: {
-    height: 14,
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 18
-  },
-  equippedPonytail: {
-    position: 'absolute',
-    top: 66,
-    right: 55,
-    width: 30,
-    height: 76,
-    borderRadius: 18,
-    transform: [{ rotate: '-18deg' }],
-    zIndex: 2
-  },
-  equippedCrownRow: {
-    position: 'absolute',
-    top: 43,
-    flexDirection: 'row',
-    gap: 9,
-    zIndex: 8
-  },
-  equippedCrownPoint: {
-    width: 13,
-    height: 18,
-    borderTopLeftRadius: 7,
-    borderTopRightRadius: 7,
-    transform: [{ rotate: '45deg' }]
-  },
-  neck: {
-    width: 26,
-    height: 18,
-    backgroundColor: '#D6A77E',
-    zIndex: 4
-  },
-  torso: {
-    width: 98,
-    height: 96,
-    borderRadius: 28,
-    borderWidth: 3,
-    zIndex: 4,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  jacketTorso: { width: 108, borderRadius: 20 },
-  singletTorso: { width: 86, borderTopLeftRadius: 34, borderTopRightRadius: 34 },
-  collar: {
-    position: 'absolute',
-    top: 8,
-    width: 48,
-    height: 18,
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
-    borderBottomWidth: 3,
-    borderColor: 'rgba(255, 255, 255, 0.45)'
-  },
-  torsoPanel: {
-    width: 48,
-    height: 54,
-    borderRadius: 18,
-    opacity: 0.88
-  },
-  torsoHighlight: {
-    position: 'absolute',
-    top: 24,
-    right: 18,
-    width: 9,
-    height: 44,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)'
-  },
-  outfitTrim: {
-    position: 'absolute',
-    left: 10,
-    bottom: 12,
-    width: 38,
-    height: 6,
-    borderRadius: 4,
-    transform: [{ rotate: '-8deg' }],
-    opacity: 0.85
-  },
-  arm: {
-    position: 'absolute',
-    top: 135,
-    width: 34,
-    height: 102,
-    borderRadius: 18,
-    backgroundColor: '#F3CBA9',
-    borderWidth: 2,
-    borderColor: '#FFE2C7',
-    zIndex: 2
-  },
-  armLeft: {
-    left: 42,
-    transform: [{ rotate: '7deg' }]
-  },
-  armRight: {
-    right: 42,
-    transform: [{ rotate: '-7deg' }]
-  },
-  waist: {
-    width: 78,
-    height: 18,
-    backgroundColor: colors.primaryDim,
-    borderRadius: 8,
-    zIndex: 5
-  },
-  legs: {
-    flexDirection: 'row',
-    gap: 10,
-    zIndex: 3
-  },
-  leg: {
-    width: 36,
-    height: 92,
-    borderRadius: 15,
-    borderWidth: 2,
-    overflow: 'hidden',
-    alignItems: 'center'
-  },
-  legStripe: {
-    width: 6,
-    height: '86%',
-    borderRadius: 5,
-    opacity: 0.35,
-    marginTop: 8
-  },
-  chevronTrim: { transform: [{ rotate: '-8deg' }] },
-  shoes: {
-    flexDirection: 'row',
-    gap: 8,
-    zIndex: 5
-  },
-  shoe: {
-    width: 52,
-    height: 22,
-    borderRadius: radii.pill,
-    borderWidth: 2,
-    overflow: 'hidden'
-  },
-  trailShoe: { height: 26, borderRadius: 8 },
-  shoeSole: {
-    position: 'absolute',
-    left: 6,
-    right: 6,
-    bottom: 2,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)'
-  },
-  accessory: {
-    position: 'absolute',
-    top: 112,
-    right: 42,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    ...shadows.cyanGlow
-  },
-  towelAccessory: {
-    top: 130,
-    right: 28,
-    width: 30,
-    height: 82,
-    borderRadius: 9,
-    transform: [{ rotate: '-8deg' }]
-  },
-  sleeveAccessory: {
-    top: 144,
-    right: 36,
-    width: 25,
-    height: 76,
-    borderRadius: 12
-  },
-  accessoryDetail: {
-    position: 'absolute',
-    left: 4,
-    right: 4,
-    top: 6,
-    height: 5,
-    borderRadius: 3
-  }
+  stage: { alignItems: 'center', justifyContent: 'center', overflow: 'visible' },
+  artboard: { position: 'relative' },
+  characterArt: { width: '100%', height: '100%' },
+  anchor: { position: 'absolute' },
+  atmosphereGlow: { position: 'absolute', top: '4%', left: '4%', right: '4%', bottom: '5%', borderRadius: 120 },
+  auraRing: { position: 'absolute', top: '8%', left: '8%', right: '8%', bottom: '8%', borderRadius: 100, borderWidth: 2, ...shadows.cyanGlow },
+  auraRail: { position: 'absolute', top: '18%', width: 2, height: '58%', borderRadius: 2 },
+  auraRailLeft: { left: '15%', transform: [{ rotate: '7deg' }] },
+  auraRailRight: { right: '15%', transform: [{ rotate: '-7deg' }] },
+  profileFrame: { position: 'absolute', top: '5%', left: '7%', right: '7%', bottom: '5%', borderRadius: 92, borderWidth: 2, opacity: 0.7 },
+  frameCorner: { position: 'absolute', width: 26, height: 26, borderWidth: 3 },
+  frameCornerTopLeft: { top: -4, left: -4, borderRightWidth: 0, borderBottomWidth: 0, borderTopLeftRadius: 12 },
+  frameCornerBottomRight: { right: -4, bottom: -4, borderLeftWidth: 0, borderTopWidth: 0, borderBottomRightRadius: 12 },
+  headBand: { position: 'absolute', top: '15%', left: '12%', width: '70%', height: '10%', borderRadius: 8, borderWidth: 1, transform: [{ rotate: '-5deg' }], overflow: 'hidden' },
+  visorBand: { height: '15%', borderBottomLeftRadius: 14, borderBottomRightRadius: 14 },
+  headBandTrim: { position: 'absolute', right: '8%', top: 0, bottom: 0, width: '12%' },
+  capCrown: { position: 'absolute', top: '1%', left: '15%', width: '62%', height: '30%', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderBottomLeftRadius: 8, borderWidth: 1 },
+  capBrim: { position: 'absolute', top: '25%', right: '6%', width: '42%', height: '7%', borderRadius: 7, transform: [{ rotate: '-8deg' }] },
+  ponytailAccent: { position: 'absolute', top: '4%', right: '-5%', width: '38%', height: '56%', borderRadius: 24, borderRightWidth: 4, transform: [{ rotate: '-12deg' }], opacity: 0.8 },
+  crownRow: { position: 'absolute', top: '5%', left: '22%', flexDirection: 'row', gap: 3 },
+  crownPoint: { width: 8, height: 10, borderTopLeftRadius: 5, borderTopRightRadius: 5, transform: [{ rotate: '45deg' }] },
+  topTint: { position: 'absolute', left: '8%', top: '4%', width: '84%', height: '86%', borderRadius: 20 },
+  jacketTint: { borderTopLeftRadius: 8, borderTopRightRadius: 8 },
+  singletTint: { left: '18%', width: '64%', borderTopLeftRadius: 24, borderTopRightRadius: 24 },
+  leftLapel: { position: 'absolute', left: '19%', top: '7%', width: '25%', height: '46%', borderRightWidth: 2, borderBottomWidth: 2, borderBottomRightRadius: 18, transform: [{ rotate: '-5deg' }] },
+  rightLapel: { position: 'absolute', right: '19%', top: '7%', width: '25%', height: '46%', borderLeftWidth: 2, borderBottomWidth: 2, borderBottomLeftRadius: 18, transform: [{ rotate: '5deg' }] },
+  chestTrim: { position: 'absolute', left: '31%', bottom: '14%', width: '38%', height: 4, borderRadius: 3 },
+  chevronChestTrim: { transform: [{ rotate: '-11deg' }] },
+  jacketZip: { position: 'absolute', left: '49%', top: '12%', width: 2, height: '70%', borderRadius: 1 },
+  waistTrim: { position: 'absolute', left: '8%', top: '12%', width: '84%', height: '24%', borderRadius: 8, transform: [{ rotate: '1deg' }] },
+  waistTab: { position: 'absolute', right: '12%', top: '5%', width: '22%', height: '30%', borderRadius: 4 },
+  legTint: { position: 'absolute', left: '9%', top: 0, width: '82%', height: '96%', borderRadius: 26 },
+  shortsTint: { height: '30%' },
+  legRail: { position: 'absolute', right: '18%', top: '3%', width: 4, height: '82%', borderRadius: 3, transform: [{ rotate: '-3deg' }], opacity: 0.82 },
+  legRailAccent: { position: 'absolute', top: '18%', left: -2, width: 8, height: '24%', borderRadius: 4 },
+  shoeRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: '3%', paddingBottom: '3%' },
+  shoeAccent: { width: '46%', height: '45%', borderRadius: 10, borderWidth: 1, overflow: 'hidden' },
+  shoeSlash: { position: 'absolute', left: '20%', top: '34%', width: '58%', height: 3, borderRadius: 2, transform: [{ rotate: '-12deg' }] },
+  wristAccessory: { borderRadius: 7, borderWidth: 1, transform: [{ rotate: '-7deg' }], overflow: 'hidden' },
+  towelAccessory: { left: '38%', top: '-12%', width: '86%', height: '170%', borderRadius: 5 },
+  sleeveAccessory: { left: '4%', top: '-70%', width: '70%', height: '210%', borderRadius: 10, opacity: 0.78 },
+  accessoryFace: { position: 'absolute', left: '18%', right: '18%', top: '20%', height: '28%', borderRadius: 3 }
 });

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { AppText } from '@/components/AppText';
 import { AvatarPreview } from '@/components/AvatarPreview';
 import { CosmeticThumbnail, RARITY_COLORS } from '@/components/CosmeticThumbnail';
@@ -16,10 +17,10 @@ import { levelFromTotalExp, statLevel } from '@/utils/exp';
 import { getCosmeticUnlockProgress } from '@/utils/cosmetics';
 
 const statRows = [
-  ['Endurance', 'enduranceExp'],
-  ['Speed', 'speedExp'],
-  ['Strength', 'strengthExp'],
-  ['Consistency', 'consistencyExp']
+  ['Endurance', 'enduranceExp', 'pulse-outline'],
+  ['Speed', 'speedExp', 'speedometer-outline'],
+  ['Strength', 'strengthExp', 'barbell-outline'],
+  ['Consistency', 'consistencyExp', 'calendar-outline']
 ] as const;
 
 export default function CharacterScreen() {
@@ -29,6 +30,8 @@ export default function CharacterScreen() {
   const progress = character ? levelFromTotalExp(character.totalExp) : null;
   const diamonds = 0;
   const [customizing, setCustomizing] = useState(false);
+  const { height: screenHeight } = useWindowDimensions();
+  const avatarHeight = Math.min(520, Math.max(340, screenHeight - 320));
 
   return (
     <Screen scroll={false}>
@@ -52,31 +55,45 @@ export default function CharacterScreen() {
       </View>
 
       <View style={styles.hero}>
-        <View style={styles.sceneGlow} />
-        <View style={styles.floorGlow} />
-        <View style={styles.characterStage}>
+        <LinearGradient
+          pointerEvents="none"
+          colors={['rgba(143, 92, 255, 0.16)', 'rgba(53, 246, 255, 0.04)', 'rgba(3, 7, 19, 0)']}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={styles.sceneAtmosphere}
+        />
+        <View pointerEvents="none" style={styles.sceneRailLeft} />
+        <View pointerEvents="none" style={styles.sceneRailRight} />
+        <View pointerEvents="none" style={styles.floorGlow} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open character wardrobe"
+          onPress={() => setCustomizing(true)}
+          style={({ pressed }) => [styles.characterStage, pressed && styles.characterPressed]}
+        >
+          <AvatarPreview equipment={equippedCosmetics} height={avatarHeight} />
           <View style={styles.levelBadge}>
-            <AppText style={styles.levelBadgeText}>LVL {character?.level ?? 1}</AppText>
+            <AppText style={styles.levelBadgeText}>LV {character?.level ?? 1}</AppText>
           </View>
-          <AvatarPreview equipment={equippedCosmetics} />
-        </View>
+        </Pressable>
         <Pressable onPress={() => setCustomizing(true)} style={({ pressed }) => [styles.wardrobeButton, pressed && styles.pressed]}>
           <Ionicons name="shirt-outline" size={18} color={colors.primary} />
-          <AppText style={styles.wardrobeButtonText}>Tap to open wardrobe</AppText>
+          <AppText style={styles.wardrobeButtonText}>Open wardrobe</AppText>
         </Pressable>
       </View>
 
       <View style={styles.statsGrid}>
-        {statRows.map(([label, key]) => {
+        {statRows.map(([label, key, icon]) => {
           const exp = character?.[key] ?? 0;
           return (
             <View key={key} style={styles.statCard}>
-              <AppText variant="caption" style={styles.statLabel}>
-                {label}
-              </AppText>
+              <View style={styles.statHeader}>
+                <Ionicons name={icon} size={13} color={colors.primary} />
+                <AppText variant="caption" style={styles.statLabel}>{label}</AppText>
+              </View>
               <View style={styles.statValueRow}>
                 <AppText style={styles.statLevel}>Lv {statLevel(exp)}</AppText>
-                <AppText variant="caption" muted>
+                <AppText variant="caption" muted style={styles.statExpText}>
                   {exp} EXP
                 </AppText>
               </View>
@@ -120,7 +137,12 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
   }, []);
 
   const currentEquipped = getEquippedId(equippedCosmetics, category);
-  const items = visibleCosmeticsForCategory(category);
+  const items = useMemo(
+    () => [...visibleCosmeticsForCategory(category)].sort((left, right) =>
+      wardrobeRank(left, currentEquipped, ownedIds) - wardrobeRank(right, currentEquipped, ownedIds)
+    ),
+    [category, currentEquipped, ownedIds]
+  );
 
   const canUseItem = (item: CosmeticItem) =>
     item.unlockSource.type === 'starter' || ownedIds.has(item.id);
@@ -153,11 +175,20 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
             </Pressable>
           </View>
 
-          <View style={styles.modalPreview}>
-            <AvatarPreview equipment={equippedCosmetics} size="small" />
-          </View>
+          <LinearGradient
+            colors={['rgba(143, 92, 255, 0.14)', 'rgba(3, 7, 19, 0.96)']}
+            style={styles.modalPreview}
+          >
+            <View style={styles.previewFloor} />
+            <AvatarPreview equipment={equippedCosmetics} size="wardrobe" />
+          </LinearGradient>
 
-          <View style={styles.categoryStrip}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryStrip}
+            style={styles.categoryScroller}
+          >
             {COSMETIC_CATEGORIES.map((nextCategory) => (
               <Pressable
                 key={nextCategory}
@@ -169,7 +200,7 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
                 </AppText>
               </Pressable>
             ))}
-          </View>
+          </ScrollView>
 
           <ScrollView contentContainerStyle={styles.itemList} showsVerticalScrollIndicator={false}>
             {items.map((item) => {
@@ -253,6 +284,12 @@ const getEquippedId = (
   return equipment[key] as string | null;
 };
 
+const wardrobeRank = (item: CosmeticItem, equippedId: string | null, ownedIds: Set<string>) => {
+  if (item.id === equippedId) return 0;
+  if (item.unlockSource.type === 'starter' || ownedIds.has(item.id)) return 1;
+  return 2;
+};
+
 const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
@@ -281,7 +318,7 @@ const styles = StyleSheet.create({
     fontWeight: '900'
   },
   miniProgressTrack: {
-    height: 6,
+    height: 5,
     borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: colors.borderDim,
@@ -290,8 +327,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs
   },
   miniProgressSlim: {
-    height: 5,
-    maxWidth: 168
+    height: 4,
+    maxWidth: 154
   },
   miniProgressFill: {
     height: '100%',
@@ -319,44 +356,65 @@ const styles = StyleSheet.create({
   hero: {
     flex: 1,
     minHeight: 0,
-    borderRadius: radii.lg,
-    backgroundColor: 'rgba(2, 4, 10, 0.34)',
     alignItems: 'center',
     justifyContent: 'space-between',
     overflow: 'hidden',
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.md
+    marginHorizontal: -spacing.md,
+    paddingBottom: spacing.sm
   },
-  sceneGlow: {
+  sceneAtmosphere: {
     position: 'absolute',
-    top: 6,
-    width: 280,
-    height: 330,
-    borderRadius: 150,
-    backgroundColor: colors.secondarySoft
+    top: 0,
+    left: '8%',
+    right: '8%',
+    bottom: 26,
+    borderRadius: 140
+  },
+  sceneRailLeft: {
+    position: 'absolute',
+    left: '19%',
+    top: '14%',
+    width: 1,
+    height: '52%',
+    backgroundColor: 'rgba(53, 246, 255, 0.16)',
+    transform: [{ rotate: '8deg' }]
+  },
+  sceneRailRight: {
+    position: 'absolute',
+    right: '20%',
+    top: '20%',
+    width: 1,
+    height: '45%',
+    backgroundColor: 'rgba(143, 92, 255, 0.22)',
+    transform: [{ rotate: '-7deg' }]
   },
   floorGlow: {
     position: 'absolute',
-    bottom: 66,
-    width: 292,
-    height: 58,
-    borderRadius: 30,
-    backgroundColor: colors.primarySoft,
-    transform: [{ scaleX: 1.34 }]
+    bottom: 54,
+    width: 176,
+    height: 25,
+    borderRadius: 88,
+    backgroundColor: 'rgba(53, 246, 255, 0.16)',
+    transform: [{ scaleX: 1.4 }]
   },
   characterStage: {
     flex: 1,
     width: '100%',
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    minHeight: 0
+  },
+  characterPressed: {
+    opacity: 0.94,
+    transform: [{ scale: 0.992 }]
   },
   wardrobeButton: {
-    minWidth: 228,
-    minHeight: 52,
+    minWidth: 214,
+    minHeight: 44,
     borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: colors.primary,
-    backgroundColor: 'rgba(11, 22, 40, 0.78)',
+    backgroundColor: 'rgba(7, 17, 31, 0.9)',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -373,12 +431,12 @@ const styles = StyleSheet.create({
   },
   levelBadge: {
     position: 'absolute',
-    top: spacing.md,
-    right: spacing.md,
+    right: '18%',
+    bottom: '11%',
     borderRadius: radii.pill,
     backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
     zIndex: 10
   },
   levelBadgeText: {
@@ -387,33 +445,41 @@ const styles = StyleSheet.create({
   },
   statsGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.xs,
     flexShrink: 0
   },
   statCard: {
-    width: '49%',
-    minHeight: 66,
-    borderRadius: radii.md,
+    width: '23.5%',
+    minHeight: 62,
+    borderRadius: radii.sm,
     borderWidth: 1,
     borderColor: colors.borderDim,
     backgroundColor: colors.card,
-    padding: spacing.sm,
-    gap: spacing.xs
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs,
+    gap: 3
+  },
+  statHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3
   },
   statLabel: {
     color: colors.primary,
-    fontSize: 10
+    fontSize: 8
   },
   statValueRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'space-between',
-    gap: spacing.xs
+    gap: 2
   },
   statLevel: {
-    fontSize: 16,
+    fontSize: 12,
     fontWeight: '900'
+  },
+  statExpText: {
+    fontSize: 8
   },
   modalBackdrop: {
     flex: 1,
@@ -421,14 +487,14 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end'
   },
   modalCard: {
-    height: '92%',
+    height: '94%',
     backgroundColor: colors.card,
     borderTopLeftRadius: radii.lg,
     borderTopRightRadius: radii.lg,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.lg,
-    gap: spacing.md
+    padding: spacing.md,
+    gap: spacing.sm
   },
   modalHeader: {
     flexDirection: 'row',
@@ -446,19 +512,29 @@ const styles = StyleSheet.create({
     borderColor: colors.borderDim
   },
   modalPreview: {
-    height: 190,
+    height: 272,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: colors.borderDim,
-    backgroundColor: colors.black,
+    borderRadius: radii.md,
     overflow: 'hidden'
+  },
+  previewFloor: {
+    position: 'absolute',
+    bottom: 18,
+    width: 120,
+    height: 18,
+    borderRadius: 60,
+    backgroundColor: 'rgba(53, 246, 255, 0.15)',
+    transform: [{ scaleX: 1.35 }]
+  },
+  categoryScroller: {
+    flexGrow: 0,
+    maxHeight: 42
   },
   categoryStrip: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs
+    gap: spacing.xs,
+    paddingRight: spacing.md
   },
   categoryPill: {
     borderRadius: radii.pill,
