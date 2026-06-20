@@ -5,6 +5,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar } from 'expo-status-bar';
 import { colors } from '@/constants/theme';
+import { LevelUpCelebrationHost } from '@/components/LevelUpCelebrationHost';
 import { useAuthSession } from '@/hooks/useAuthSession';
 
 export default function RootLayout() {
@@ -40,6 +41,7 @@ export default function RootLayout() {
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
       </Stack>
+      <LevelUpCelebrationHost />
     </GestureHandlerRootView>
   );
 }

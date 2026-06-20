@@ -3,6 +3,7 @@ import {
   Activity,
   Character,
   EquippedCosmetics,
+  LevelUpCelebration,
   Mission,
   OwnedCosmetic,
   PersonalRecord,
@@ -21,6 +22,7 @@ type AppState = {
   progressionStreaks: ProgressionStreaks | null;
   achievements: UserAchievement[];
   personalRecords: PersonalRecord[];
+  pendingLevelUps: LevelUpCelebration[];
   setProfile: (profile: Profile | null) => void;
   setCharacter: (character: Character | null) => void;
   setActivities: (activities: Activity[]) => void;
@@ -30,6 +32,8 @@ type AppState = {
   setProgressionStreaks: (progressionStreaks: ProgressionStreaks | null) => void;
   setAchievements: (achievements: UserAchievement[]) => void;
   setPersonalRecords: (personalRecords: PersonalRecord[]) => void;
+  setPendingLevelUps: (pendingLevelUps: LevelUpCelebration[]) => void;
+  removePendingLevelUp: (level: number) => void;
   addOwnedCosmetic: (ownedCosmetic: OwnedCosmetic) => void;
   addActivity: (activity: Activity) => void;
   updateActivity: (activity: Activity) => void;
@@ -46,6 +50,7 @@ export const useAppStore = create<AppState>((set) => ({
   progressionStreaks: null,
   achievements: [],
   personalRecords: [],
+  pendingLevelUps: [],
   setProfile: (profile) => set({ profile }),
   setCharacter: (character) => set({ character }),
   setActivities: (activities) => set({ activities }),
@@ -55,6 +60,10 @@ export const useAppStore = create<AppState>((set) => ({
   setProgressionStreaks: (progressionStreaks) => set({ progressionStreaks }),
   setAchievements: (achievements) => set({ achievements }),
   setPersonalRecords: (personalRecords) => set({ personalRecords }),
+  setPendingLevelUps: (pendingLevelUps) =>
+    set({ pendingLevelUps: [...pendingLevelUps].sort((left, right) => left.level - right.level) }),
+  removePendingLevelUp: (level) =>
+    set((state) => ({ pendingLevelUps: state.pendingLevelUps.filter((item) => item.level !== level) })),
   addOwnedCosmetic: (ownedCosmetic) =>
     set((state) => ({ ownedCosmetics: [...state.ownedCosmetics, ownedCosmetic] })),
   addActivity: (activity) => set((state) => ({ activities: [activity, ...state.activities] })),
@@ -72,6 +81,7 @@ export const useAppStore = create<AppState>((set) => ({
       equippedCosmetics: null,
       progressionStreaks: null,
       achievements: [],
-      personalRecords: []
+      personalRecords: [],
+      pendingLevelUps: []
     })
 }));

@@ -174,6 +174,14 @@ export type ProgressionStreaks = {
   updatedAt: string;
 };
 
+export type LevelUpCelebration = {
+  userId: string;
+  previousLevel: number;
+  level: number;
+  queuedAt: string;
+  viewedAt?: string | null;
+};
+
 export type PersonalRecordType =
   | 'fastest_1_km'
   | 'fastest_5_km'
@@ -471,6 +479,18 @@ export type Database = {
         Update: never;
         Relationships: [];
       };
+      level_up_celebrations: {
+        Row: {
+          user_id: string;
+          level: number;
+          previous_level: number;
+          queued_at: string;
+          viewed_at: string | null;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -493,6 +513,10 @@ export type Database = {
       process_activity_rewards: {
         Args: { p_activity_id: string };
         Returns: ActivityRewardSummary;
+      };
+      mark_level_up_viewed: {
+        Args: { p_level: number };
+        Returns: Database['public']['Tables']['level_up_celebrations']['Row'];
       };
     };
     Enums: {

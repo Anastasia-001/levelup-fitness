@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { listActivities, processPendingActivityRewards } from '@/services/activityService';
 import { getInventory } from '@/services/cosmeticService';
+import { listPendingLevelUps } from '@/services/levelUpService';
 import { getTodayMissions } from '@/services/missionService';
 import { getCharacter, getProfile } from '@/services/profileService';
 import { refreshProgressionMilestones } from '@/services/progressionService';
@@ -18,6 +19,7 @@ export const useBootstrap = () => {
   const setProgressionStreaks = useAppStore((state) => state.setProgressionStreaks);
   const setAchievements = useAppStore((state) => state.setAchievements);
   const setPersonalRecords = useAppStore((state) => state.setPersonalRecords);
+  const setPendingLevelUps = useAppStore((state) => state.setPendingLevelUps);
 
   const bootstrap = useCallback(
     async (userId: string) => {
@@ -48,6 +50,14 @@ export const useBootstrap = () => {
         setEquippedCosmetics(inventory.equippedCosmetics);
 
         try {
+          setPendingLevelUps(await listPendingLevelUps(userId));
+        } catch (caught) {
+          if (__DEV__) {
+            console.warn('[LevelUp] Pending level celebrations could not be loaded.', caught);
+          }
+        }
+
+        try {
           const progression = await refreshProgressionMilestones({ userId, activities });
           setProgressionStreaks(progression.streaks);
           setAchievements(progression.achievements);
@@ -76,6 +86,7 @@ export const useBootstrap = () => {
       setMissions,
       setOwnedCosmetics,
       setPersonalRecords,
+      setPendingLevelUps,
       setProfile,
       setProgressionStreaks
     ]

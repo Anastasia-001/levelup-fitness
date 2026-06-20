@@ -7,6 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ActivityRouteMap } from '@/components/ActivityRouteMap';
 import { AppText } from '@/components/AppText';
 import { FitnessMap } from '@/components/FitnessMap';
+import { LevelUpCelebration } from '@/components/LevelUpCelebration';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { Screen } from '@/components/Screen';
 import { TextField } from '@/components/TextField';
@@ -32,11 +33,18 @@ import {
   stopBackgroundLocationUpdates
 } from '@/services/gpsTracking';
 import { fallbackActivityTitle } from '@/services/mappers';
+import { listPendingLevelUps } from '@/services/levelUpService';
 import { getTodayMissions } from '@/services/missionService';
 import { ensureProfileAndCharacter } from '@/services/profileService';
 import { rebuildPersonalRecords, refreshProgressionMilestones } from '@/services/progressionService';
 import { useAppStore } from '@/store/appStore';
-import { Activity, ActivityType, PersonalRecord, RoutePoint } from '@/types/domain';
+import {
+  Activity,
+  ActivityType,
+  LevelUpCelebration as LevelUpCelebrationModel,
+  PersonalRecord,
+  RoutePoint
+} from '@/types/domain';
 import { formatDistance, formatDuration, formatPace, formatSpeed } from '@/utils/format';
 import { elevationGainMeters } from '@/utils/geo';
 import { PERSONAL_RECORD_LABELS } from '@/utils/progression';
@@ -99,6 +107,7 @@ export default function RecordScreen() {
   const setProgressionStreaks = useAppStore((state) => state.setProgressionStreaks);
   const setAchievements = useAppStore((state) => state.setAchievements);
   const setPersonalRecords = useAppStore((state) => state.setPersonalRecords);
+  const setPendingLevelUps = useAppStore((state) => state.setPendingLevelUps);
   const units = useAppStore((state) => state.profile?.unitPreference ?? 'metric');
   const selectedIsGps = isGpsActivity(selectedType);
 
@@ -519,6 +528,11 @@ export default function RecordScreen() {
 
       setActivityTitle('');
       setSavedActivity(activityForSummary);
+      try {
+        setPendingLevelUps(await listPendingLevelUps(userId));
+      } catch (caught) {
+        logRecordSaveError('refresh-level-up-queue', { activityId: result.activity.id }, caught);
+      }
       return true;
     } catch (caught) {
       logRecordSaveError('save-workout', input, caught);
@@ -1299,79 +1313,118 @@ const RewardBreakdown = ({
   fallbackRecords: PersonalRecord[];
 }) => {
   const summary = activity.rewardSummary;
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const records = summary?.personalRecords.length
     ? summary.personalRecords
     : fallbackRecords.map((record) => ({ recordType: record.recordType, sportKey: record.sportKey }));
+  const levelCelebrations: LevelUpCelebrationModel[] =
+    summary?.levelBefore !== null &&
+    summary?.levelBefore !== undefined &&
+    summary.levelAfter !== null &&
+    summary.levelAfter !== undefined &&
+    summary.levelAfter > summary.levelBefore
+      ? Array.from({ length: summary.levelAfter - summary.levelBefore }, (_, index) => ({
+          userId: activity.userId,
+          previousLevel: summary.levelBefore! + index,
+          level: summary.levelBefore! + index + 1,
+          queuedAt: summary.processedAt,
+          viewedAt: null
+        }))
+      : [];
+  const previewCelebration = previewIndex === null ? null : levelCelebrations[previewIndex] ?? null;
+
+  useEffect(() => {
+    setPreviewIndex(null);
+  }, [activity.id]);
+
+  const continuePreview = () => {
+    if (previewIndex === null) return;
+    setPreviewIndex(previewIndex + 1 < levelCelebrations.length ? previewIndex + 1 : null);
+  };
 
   return (
-    <View style={styles.rewardPanel}>
-      <View style={styles.rewardHeader}>
-        <View>
-          <AppText variant="caption" style={{ color: colors.warning }}>
-            REWARDS
-          </AppText>
-          <AppText variant="subtitle">Training gains</AppText>
-        </View>
-        <Ionicons name="sparkles" size={24} color={colors.warning} />
-      </View>
-
-      {summary ? (
-        <>
-          <View style={styles.rewardGrid}>
-            <RewardLine icon="flash" label="Character EXP" value={`+${summary.characterExp}`} />
-            <RewardLine icon="ellipse" label="Gold Coins" value={`+${summary.goldCoins}`} coin />
-            {Object.entries(summary.statExp).map(([stat, value]) => (
-              <RewardLine
-                key={`reward-stat-${stat}`}
-                icon="trending-up"
-                label={stat.charAt(0).toUpperCase() + stat.slice(1)}
-                value={`+${value}`}
-              />
-            ))}
+    <>
+      <View style={styles.rewardPanel}>
+        <View style={styles.rewardHeader}>
+          <View>
+            <AppText variant="caption" style={{ color: colors.warning }}>
+              REWARDS
+            </AppText>
+            <AppText variant="subtitle">Training gains</AppText>
           </View>
+          <Ionicons name="sparkles" size={24} color={colors.warning} />
+        </View>
 
-          {summary.levelBefore !== null &&
-            summary.levelBefore !== undefined &&
-            summary.levelAfter !== null &&
-            summary.levelAfter !== undefined &&
-            summary.levelAfter > summary.levelBefore && (
-              <View style={styles.levelReward}>
+        {summary ? (
+          <>
+            <View style={styles.rewardGrid}>
+              <RewardLine icon="flash" label="Character EXP" value={`+${summary.characterExp}`} />
+              <RewardLine icon="ellipse" label="Gold Coins" value={`+${summary.goldCoins}`} coin />
+              {Object.entries(summary.statExp).map(([stat, value]) => (
+                <RewardLine
+                  key={`reward-stat-${stat}`}
+                  icon="trending-up"
+                  label={stat.charAt(0).toUpperCase() + stat.slice(1)}
+                  value={`+${value}`}
+                />
+              ))}
+            </View>
+
+            {levelCelebrations.length > 0 && (
+              <Pressable onPress={() => setPreviewIndex(0)} style={styles.levelReward}>
                 <Ionicons name="star" size={20} color={colors.warning} />
-                <AppText style={styles.levelRewardText}>Level Up: {summary.levelBefore} to {summary.levelAfter}</AppText>
-              </View>
+                <View style={{ flex: 1 }}>
+                  <AppText style={styles.levelRewardText}>Level Up: {summary.levelBefore} to {summary.levelAfter}</AppText>
+                  <AppText variant="caption" muted>Tap to view celebration</AppText>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.warning} />
+              </Pressable>
             )}
 
-          {summary.missionsCompleted.map((mission) => (
-            <RewardEvent
-              key={`reward-mission-${mission.id}`}
-              icon="checkmark-circle"
-              label="Mission Complete"
-              value={mission.title}
-            />
-          ))}
-          {summary.achievementsUnlocked.map((achievement) => (
-            <RewardEvent
-              key={`reward-achievement-${achievement.id}`}
-              icon="medal"
-              label="Achievement Unlocked"
-              value={achievement.title}
-            />
-          ))}
-          {records.map((record) => (
-            <RewardEvent
-              key={`reward-record-${record.recordType}-${record.sportKey}`}
-              icon="trophy"
-              label="New Record"
-              value={`${PERSONAL_RECORD_LABELS[record.recordType]} - ${
-                record.sportKey === 'all' ? 'All sports' : ACTIVITY_LABELS[record.sportKey]
-              }`}
-            />
-          ))}
-        </>
-      ) : (
-        <AppText muted>Rewards are saved with this activity and will sync when progression is available.</AppText>
-      )}
-    </View>
+            {summary.missionsCompleted.map((mission) => (
+              <RewardEvent
+                key={`reward-mission-${mission.id}`}
+                icon="checkmark-circle"
+                label="Mission Complete"
+                value={mission.title}
+              />
+            ))}
+            {summary.achievementsUnlocked.map((achievement) => (
+              <RewardEvent
+                key={`reward-achievement-${achievement.id}`}
+                icon="medal"
+                label="Achievement Unlocked"
+                value={achievement.title}
+              />
+            ))}
+            {records.map((record) => (
+              <RewardEvent
+                key={`reward-record-${record.recordType}-${record.sportKey}`}
+                icon="trophy"
+                label="New Record"
+                value={`${PERSONAL_RECORD_LABELS[record.recordType]} - ${
+                  record.sportKey === 'all' ? 'All sports' : ACTIVITY_LABELS[record.sportKey]
+                }`}
+              />
+            ))}
+          </>
+        ) : (
+          <AppText muted>Rewards are saved with this activity and will sync when progression is available.</AppText>
+        )}
+      </View>
+
+      <LevelUpCelebration
+        visible={Boolean(previewCelebration)}
+        celebration={previewCelebration}
+        onContinue={continuePreview}
+        queueLabel={
+          levelCelebrations.length > 1 && previewIndex !== null
+            ? `${previewIndex + 1} of ${levelCelebrations.length} level ups`
+            : undefined
+        }
+        additionalUnlocks={summary?.achievementsUnlocked.map((achievement) => achievement.title) ?? []}
+      />
+    </>
   );
 };
 
