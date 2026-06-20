@@ -39,8 +39,14 @@ export const LevelUpCelebration = ({
   const celebrationPreviousLevel = celebration?.previousLevel;
   const unlocks = useMemo(() => {
     if (!celebration) return additionalUnlocks;
-    const levelUnlocks = COSMETICS.filter((item) => item.unlockLevel === celebration.level).map((item) =>
-      item.price === 0 ? `Cosmetic unlocked: ${item.name}` : `Shop item available: ${item.name}`
+    const levelUnlocks = COSMETICS.filter((item) =>
+      item.unlockSource.type === 'shop'
+        ? item.unlockLevel === celebration.level
+        : item.unlockSource.type === 'achievement' && item.unlockSource.id === `character_level_${celebration.level}`
+    ).map((item) =>
+      item.unlockSource.type === 'achievement'
+        ? `Cosmetic earned: ${item.name}`
+        : `Shop item available: ${item.name}`
     );
     return [...new Set([...additionalUnlocks, ...levelUnlocks])];
   }, [additionalUnlocks, celebration]);

@@ -1,6 +1,7 @@
 import { ACHIEVEMENT_IDS } from '@/constants/achievements';
 import { supabase } from '@/lib/supabase';
 import { mapPersonalRecord, mapProgressionStreaks, mapUserAchievement } from '@/services/mappers';
+import { syncEarnedCosmetics } from '@/services/cosmeticService';
 import { getCharacter } from '@/services/profileService';
 import { Activity, PersonalRecord } from '@/types/domain';
 import {
@@ -79,6 +80,8 @@ export const refreshProgressionMilestones = async ({
     })
   );
 
+  const newCosmetics = await syncEarnedCosmetics();
+
   const [achievements, personalRecords, character] = await Promise.all([
     listUserAchievements(userId),
     listPersonalRecords(userId),
@@ -89,6 +92,7 @@ export const refreshProgressionMilestones = async ({
     streaks: mapProgressionStreaks(streakRow),
     achievements,
     newAchievements,
+    newCosmetics,
     personalRecords,
     newPersonalRecords,
     activitiesChanged,

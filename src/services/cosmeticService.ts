@@ -6,10 +6,14 @@ export const mapOwnedCosmetic = (row: {
   user_id: string;
   item_id: string;
   acquired_at: string;
+  acquisition_source?: OwnedCosmetic['acquisitionSource'];
+  source_ref?: string | null;
 }): OwnedCosmetic => ({
   userId: row.user_id,
   itemId: row.item_id,
-  acquiredAt: row.acquired_at
+  acquiredAt: row.acquired_at,
+  acquisitionSource: row.acquisition_source ?? 'shop',
+  sourceRef: row.source_ref ?? null
 });
 
 export const mapEquippedCosmetics = (row: {
@@ -20,6 +24,7 @@ export const mapEquippedCosmetics = (row: {
   shoes_item_id: string | null;
   accessory_item_id: string | null;
   frame_item_id: string | null;
+  aura_item_id?: string | null;
   updated_at: string;
 }): EquippedCosmetics => ({
   userId: row.user_id,
@@ -29,6 +34,7 @@ export const mapEquippedCosmetics = (row: {
   shoesItemId: row.shoes_item_id,
   accessoryItemId: row.accessory_item_id,
   frameItemId: row.frame_item_id,
+  auraItemId: row.aura_item_id ?? null,
   updatedAt: row.updated_at
 });
 
@@ -49,7 +55,8 @@ export const ensureEquipment = async (userId: string) => {
       head_item_id: STARTER_EQUIPMENT.head,
       shirt_item_id: STARTER_EQUIPMENT.shirt,
       pants_item_id: STARTER_EQUIPMENT.pants,
-      shoes_item_id: STARTER_EQUIPMENT.shoes
+      shoes_item_id: STARTER_EQUIPMENT.shoes,
+      aura_item_id: STARTER_EQUIPMENT.aura
     })
     .select()
     .single();
@@ -77,11 +84,17 @@ export const getInventory = async (userId: string) => {
   return { ownedCosmetics, equippedCosmetics };
 };
 
+export const syncEarnedCosmetics = async () => {
+  const { data, error } = await supabase.rpc('sync_earned_cosmetics', {});
+  if (error) throw error;
+  return (data ?? []).map(mapOwnedCosmetic);
+};
+
 export const isCosmeticUnlocked = (
   item: CosmeticItem,
   ownedIds: string[],
-  level: number
-) => item.price === 0 || ownedIds.includes(item.id) || (item.unlockLevel ?? 1) <= level && item.price === 0;
+  _level: number
+) => item.unlockSource.type === 'starter' || ownedIds.includes(item.id);
 
 export const purchaseCosmetic = async (userId: string, item: CosmeticItem, currentCoins: number) => {
   if (item.price <= 0) {
@@ -114,7 +127,7 @@ export const purchaseCosmetic = async (userId: string, item: CosmeticItem, curre
 
   const { data: owned, error: ownedError } = await supabase
     .from('owned_cosmetics')
-    .insert({ user_id: userId, item_id: item.id })
+    .insert({ user_id: userId, item_id: item.id, acquisition_source: 'shop' })
     .select()
     .single();
 
@@ -134,7 +147,8 @@ export const equipCosmetic = async (
     pants_item_id: category === 'pants' ? itemId : undefined,
     shoes_item_id: category === 'shoes' ? itemId : undefined,
     accessory_item_id: category === 'accessory' ? itemId : undefined,
-    frame_item_id: category === 'frame' ? itemId : undefined
+    frame_item_id: category === 'frame' ? itemId : undefined,
+    aura_item_id: category === 'aura' ? itemId : undefined
   };
 
   const { data, error } = await supabase
@@ -153,5 +167,6 @@ export const getEquippedItems = (equipment: EquippedCosmetics | null) => ({
   pants: getCosmeticById(equipment?.pantsItemId) ?? getCosmeticById(STARTER_EQUIPMENT.pants),
   shoes: getCosmeticById(equipment?.shoesItemId) ?? getCosmeticById(STARTER_EQUIPMENT.shoes),
   accessory: getCosmeticById(equipment?.accessoryItemId),
-  frame: getCosmeticById(equipment?.frameItemId)
+  frame: getCosmeticById(equipment?.frameItemId),
+  aura: getCosmeticById(equipment?.auraItemId)
 });

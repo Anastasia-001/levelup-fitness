@@ -5,8 +5,21 @@ export type ManualActivityType = 'gym_workout' | 'pushups' | 'swimming' | 'other
 export type ActivityType = GpsActivityType | ManualActivityType;
 
 export type UnitPreference = 'metric' | 'imperial';
-export type CosmeticCategory = 'head' | 'shirt' | 'pants' | 'shoes' | 'accessory' | 'frame';
+export type CosmeticCategory = 'head' | 'shirt' | 'pants' | 'shoes' | 'accessory' | 'frame' | 'aura';
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
+export type CosmeticAvailability = 'permanent' | 'featured' | 'seasonal' | 'earned';
+export type CosmeticUnlockSource =
+  | { type: 'starter'; label: string }
+  | { type: 'shop'; label: string }
+  | { type: 'achievement'; id: string; label: string }
+  | { type: 'personal_record'; id: PersonalRecordType; label: string };
+
+export type CosmeticVisual = {
+  thumbnailComponent: 'headwear' | 'top' | 'bottom' | 'footwear' | 'accessory' | 'frame' | 'aura';
+  overlayComponent: 'headwear' | 'top' | 'bottom' | 'footwear' | 'accessory' | 'frame' | 'aura';
+  silhouette: string;
+  pattern: 'solid' | 'stripe' | 'panel' | 'chevron' | 'pulse' | 'streak' | 'frost';
+};
 
 export type RoutePoint = {
   latitude: number;
@@ -88,10 +101,13 @@ export type CosmeticItem = {
   id: string;
   name: string;
   category: CosmeticCategory;
-  shopSection: 'Featured' | 'Shirts' | 'Pants' | 'Shoes' | 'Accessories' | 'Frames' | 'Rare';
+  shopSection: 'Featured' | 'Shirts' | 'Pants' | 'Shoes' | 'Accessories' | 'Frames' | 'Auras' | 'Rare';
   rarity: Rarity;
   price: number;
   unlockLevel?: number;
+  availability: CosmeticAvailability;
+  unlockSource: CosmeticUnlockSource;
+  visual: CosmeticVisual;
   colors: {
     primary: string;
     secondary: string;
@@ -104,6 +120,8 @@ export type OwnedCosmetic = {
   userId: string;
   itemId: string;
   acquiredAt: string;
+  acquisitionSource: 'shop' | 'achievement' | 'personal_record' | 'starter';
+  sourceRef?: string | null;
 };
 
 export type EquippedCosmetics = {
@@ -114,6 +132,7 @@ export type EquippedCosmetics = {
   shoesItemId: string | null;
   accessoryItemId: string | null;
   frameItemId: string | null;
+  auraItemId: string | null;
   updatedAt: string;
 };
 
@@ -409,14 +428,20 @@ export type Database = {
           user_id: string;
           item_id: string;
           acquired_at: string;
+          acquisition_source: 'shop' | 'achievement' | 'personal_record' | 'starter';
+          source_ref: string | null;
         };
         Insert: {
           user_id: string;
           item_id: string;
           acquired_at?: string;
+          acquisition_source?: 'shop' | 'achievement' | 'personal_record' | 'starter';
+          source_ref?: string | null;
         };
         Update: {
           item_id?: string;
+          acquisition_source?: 'shop' | 'achievement' | 'personal_record' | 'starter';
+          source_ref?: string | null;
         };
         Relationships: [];
       };
@@ -429,6 +454,7 @@ export type Database = {
           shoes_item_id: string | null;
           accessory_item_id: string | null;
           frame_item_id: string | null;
+          aura_item_id: string | null;
           updated_at: string;
         };
         Insert: {
@@ -439,6 +465,7 @@ export type Database = {
           shoes_item_id?: string | null;
           accessory_item_id?: string | null;
           frame_item_id?: string | null;
+          aura_item_id?: string | null;
         };
         Update: {
           head_item_id?: string | null;
@@ -447,6 +474,7 @@ export type Database = {
           shoes_item_id?: string | null;
           accessory_item_id?: string | null;
           frame_item_id?: string | null;
+          aura_item_id?: string | null;
         };
         Relationships: [];
       };
@@ -546,6 +574,17 @@ export type Database = {
         Update: never;
         Relationships: [];
       };
+      cosmetic_unlock_catalog: {
+        Row: {
+          item_id: string;
+          source_type: 'achievement' | 'personal_record';
+          source_id: string;
+          requirement_label: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -576,6 +615,10 @@ export type Database = {
       reroll_daily_mission: {
         Args: { p_mission_id: string; p_replacement: unknown };
         Returns: Database['public']['Tables']['missions']['Row'];
+      };
+      sync_earned_cosmetics: {
+        Args: Record<string, never>;
+        Returns: Database['public']['Tables']['owned_cosmetics']['Row'][];
       };
     };
     Enums: {

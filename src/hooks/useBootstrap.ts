@@ -63,6 +63,14 @@ export const useBootstrap = () => {
           setAchievements(progression.achievements);
           setPersonalRecords(progression.personalRecords);
           setCharacter(progression.character);
+          if (progression.newCosmetics.length) {
+            setOwnedCosmetics([
+              ...inventory.ownedCosmetics,
+              ...progression.newCosmetics.filter(
+                (cosmetic) => !inventory.ownedCosmetics.some((owned) => owned.itemId === cosmetic.itemId)
+              )
+            ]);
+          }
 
           if (progression.activitiesChanged) {
             setActivities(await listActivities(userId));

@@ -65,7 +65,11 @@ export const useAppStore = create<AppState>((set) => ({
   removePendingLevelUp: (level) =>
     set((state) => ({ pendingLevelUps: state.pendingLevelUps.filter((item) => item.level !== level) })),
   addOwnedCosmetic: (ownedCosmetic) =>
-    set((state) => ({ ownedCosmetics: [...state.ownedCosmetics, ownedCosmetic] })),
+    set((state) => ({
+      ownedCosmetics: state.ownedCosmetics.some((item) => item.itemId === ownedCosmetic.itemId)
+        ? state.ownedCosmetics
+        : [...state.ownedCosmetics, ownedCosmetic]
+    })),
   addActivity: (activity) => set((state) => ({ activities: [activity, ...state.activities] })),
   updateActivity: (activity) =>
     set((state) => ({

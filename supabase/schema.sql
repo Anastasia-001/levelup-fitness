@@ -115,6 +115,8 @@ create table public.owned_cosmetics (
   user_id uuid not null references auth.users(id) on delete cascade,
   item_id text not null,
   acquired_at timestamptz not null default now(),
+  acquisition_source text not null default 'shop' check (acquisition_source in ('shop', 'achievement', 'personal_record', 'starter')),
+  source_ref text,
   primary key (user_id, item_id)
 );
 
@@ -126,6 +128,7 @@ create table public.equipped_cosmetics (
   shoes_item_id text,
   accessory_item_id text,
   frame_item_id text,
+  aura_item_id text,
   updated_at timestamptz not null default now()
 );
 
@@ -182,6 +185,13 @@ create table public.personal_records (
   unique (user_id, record_type, sport_key)
 );
 
+create table public.cosmetic_unlock_catalog (
+  item_id text primary key,
+  source_type text not null check (source_type in ('achievement', 'personal_record')),
+  source_id text not null,
+  requirement_label text not null
+);
+
 create index activities_user_completed_idx on public.activities (user_id, completed_at desc);
 create index missions_user_date_idx on public.missions (user_id, mission_date);
 create index personal_records_user_idx on public.personal_records (user_id, achieved_at desc);
@@ -198,6 +208,7 @@ alter table public.user_achievements enable row level security;
 alter table public.personal_records enable row level security;
 alter table public.mission_daily_rerolls enable row level security;
 alter table public.user_mission_unlocks enable row level security;
+alter table public.cosmetic_unlock_catalog enable row level security;
 
 create policy "Profiles are owned by users"
   on public.profiles for all
@@ -253,6 +264,20 @@ create policy "Users can read their mission rerolls"
 create policy "Users can read their mission unlocks"
   on public.user_mission_unlocks for select
   using (auth.uid() = user_id);
+
+create policy "Authenticated users can read cosmetic unlock catalog"
+  on public.cosmetic_unlock_catalog for select
+  to authenticated
+  using (true);
+
+insert into public.cosmetic_unlock_catalog (item_id, source_type, source_id, requirement_label)
+values
+  ('five-k-finish-frame', 'achievement', 'first_5_km', 'Complete your first 5 km activity'),
+  ('seven-day-pulse-aura', 'achievement', 'seven_day_streak', 'Reach a 7-day activity streak'),
+  ('committed-25-jacket', 'achievement', 'twenty_five_activities', 'Complete 25 activities'),
+  ('level-ten-crown-band', 'achievement', 'character_level_10', 'Reach character Level 10'),
+  ('pace-record-wristband', 'personal_record', 'fastest_5_km', 'Set a fastest 5 km personal record'),
+  ('distance-record-aura', 'personal_record', 'longest_distance', 'Set a longest-distance personal record');
 
 insert into storage.buckets (id, name, public)
 values ('activity-photos', 'activity-photos', true)
@@ -815,6 +840,52 @@ $$;
 revoke all on function public.queue_level_up_celebrations() from public;
 revoke all on function public.mark_level_up_viewed(integer) from public;
 grant execute on function public.mark_level_up_viewed(integer) to authenticated;
+
+create or replace function public.sync_earned_cosmetics()
+returns setof public.owned_cosmetics
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := auth.uid();
+begin
+  if v_user_id is null then raise exception 'Authentication required'; end if;
+
+  return query
+  with eligible as (
+    select unlocks.*
+    from public.cosmetic_unlock_catalog unlocks
+    where (
+      unlocks.source_type = 'achievement'
+      and exists (
+        select 1 from public.user_achievements achievements
+        where achievements.user_id = v_user_id
+          and achievements.achievement_id = unlocks.source_id
+      )
+    ) or (
+      unlocks.source_type = 'personal_record'
+      and exists (
+        select 1 from public.personal_records records
+        where records.user_id = v_user_id
+          and records.record_type = unlocks.source_id
+      )
+    )
+  ), inserted as (
+    insert into public.owned_cosmetics (
+      user_id, item_id, acquired_at, acquisition_source, source_ref
+    )
+    select v_user_id, eligible.item_id, now(), eligible.source_type, eligible.source_id
+    from eligible
+    on conflict (user_id, item_id) do nothing
+    returning *
+  )
+  select * from inserted order by acquired_at, item_id;
+end;
+$$;
+
+revoke all on function public.sync_earned_cosmetics() from public;
+grant execute on function public.sync_earned_cosmetics() to authenticated;
 
 create or replace function public.reroll_daily_mission(p_mission_id uuid, p_replacement jsonb)
 returns public.missions

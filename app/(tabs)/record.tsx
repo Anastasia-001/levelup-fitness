@@ -101,6 +101,7 @@ export default function RecordScreen() {
   const forceNextSegmentRef = useRef(false);
   const appStateRef = useRef(AppState.currentState);
   const addActivity = useAppStore((state) => state.addActivity);
+  const addOwnedCosmetic = useAppStore((state) => state.addOwnedCosmetic);
   const updateActivity = useAppStore((state) => state.updateActivity);
   const setCharacter = useAppStore((state) => state.setCharacter);
   const setMissions = useAppStore((state) => state.setMissions);
@@ -522,6 +523,7 @@ export default function RecordScreen() {
         setAchievements(progression.achievements);
         setPersonalRecords(progression.personalRecords);
         setCharacter(progression.character);
+        progression.newCosmetics.forEach((cosmetic) => addOwnedCosmetic(cosmetic));
       } catch (caught) {
         setNewPersonalRecords([]);
         logRecordSaveError('refresh-progression-after-save', { activityId: result.activity.id }, caught);

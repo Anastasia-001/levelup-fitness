@@ -3,7 +3,7 @@ import { Alert, Modal, Pressable, ScrollView, StyleSheet, View } from 'react-nat
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/AppText';
 import { AvatarPreview } from '@/components/AvatarPreview';
-import { CosmeticThumbnail } from '@/components/CosmeticThumbnail';
+import { CosmeticThumbnail, RARITY_COLORS } from '@/components/CosmeticThumbnail';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { Screen } from '@/components/Screen';
 import { CATEGORY_LABELS, COSMETIC_CATEGORIES, visibleCosmeticsForCategory } from '@/constants/cosmetics';
@@ -13,6 +13,7 @@ import { equipCosmetic } from '@/services/cosmeticService';
 import { useAppStore } from '@/store/appStore';
 import { CosmeticCategory, CosmeticItem } from '@/types/domain';
 import { levelFromTotalExp, statLevel } from '@/utils/exp';
+import { getCosmeticUnlockProgress } from '@/utils/cosmetics';
 
 const statRows = [
   ['Endurance', 'enduranceExp'],
@@ -92,13 +93,27 @@ export default function CharacterScreen() {
 
 const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => void }) => {
   const character = useAppStore((state) => state.character);
+  const activities = useAppStore((state) => state.activities);
+  const achievements = useAppStore((state) => state.achievements);
+  const personalRecords = useAppStore((state) => state.personalRecords);
+  const streaks = useAppStore((state) => state.progressionStreaks);
   const ownedCosmetics = useAppStore((state) => state.ownedCosmetics);
   const equippedCosmetics = useAppStore((state) => state.equippedCosmetics);
   const setEquippedCosmetics = useAppStore((state) => state.setEquippedCosmetics);
   const [userId, setUserId] = useState<string | null>(null);
   const [category, setCategory] = useState<CosmeticCategory>('head');
   const [equippingId, setEquippingId] = useState<string | null>(null);
-  const ownedIds = useMemo(() => ownedCosmetics.map((item) => item.itemId), [ownedCosmetics]);
+  const ownedIds = useMemo(() => new Set(ownedCosmetics.map((item) => item.itemId)), [ownedCosmetics]);
+  const progressContext = useMemo(
+    () => ({
+      activities,
+      achievements,
+      personalRecords,
+      streaks,
+      characterLevel: character?.level ?? 1
+    }),
+    [achievements, activities, character?.level, personalRecords, streaks]
+  );
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
@@ -108,7 +123,7 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
   const items = visibleCosmeticsForCategory(category);
 
   const canUseItem = (item: CosmeticItem) =>
-    item.price === 0 || ownedIds.includes(item.id);
+    item.unlockSource.type === 'starter' || ownedIds.has(item.id);
 
   const equip = async (item: CosmeticItem) => {
     if (!userId || !canUseItem(item)) return;
@@ -161,20 +176,35 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
               const owned = canUseItem(item);
               const equipped = currentEquipped === item.id;
               const levelLocked = (character?.level ?? 1) < (item.unlockLevel ?? 1);
+              const progress = getCosmeticUnlockProgress(item, progressContext);
+              const earned = item.availability === 'earned';
               return (
-                <View key={item.id} style={styles.cosmeticRow}>
+                <View key={`${category}-${item.id}`} style={[styles.cosmeticRow, { borderColor: RARITY_COLORS[item.rarity] }]}>
                   <CosmeticThumbnail item={item} compact />
                   <View style={{ flex: 1 }}>
                     <AppText variant="subtitle">{item.name}</AppText>
-                    <AppText muted>
+                    <AppText variant="caption" style={{ color: RARITY_COLORS[item.rarity] }}>
+                      {item.rarity.toUpperCase()} - {CATEGORY_LABELS[item.category]}
+                    </AppText>
+                    <AppText muted numberOfLines={2}>
                       {equipped
                         ? 'Equipped'
                         : owned
-                          ? 'Owned'
+                          ? earned ? 'Earned' : 'Owned'
+                          : earned
+                            ? item.unlockSource.label
                           : levelLocked
                             ? `Unlocks at Level ${item.unlockLevel}`
                             : 'Buy in Shop'}
                     </AppText>
+                    {earned && !owned && (
+                      <View style={styles.wardrobeProgressRow}>
+                        <View style={styles.wardrobeProgressTrack}>
+                          <View style={[styles.wardrobeProgressFill, { width: `${progress.ratio * 100}%` }]} />
+                        </View>
+                        <AppText variant="caption" muted>{progress.label}</AppText>
+                      </View>
+                    )}
                   </View>
                   <PrimaryButton
                     label={equipped ? 'Equipped' : owned ? (equippingId === item.id ? 'Equipping...' : 'Equip') : 'Locked'}
@@ -460,6 +490,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm
+  },
+  wardrobeProgressRow: {
+    gap: spacing.xs,
+    marginTop: spacing.xs
+  },
+  wardrobeProgressTrack: {
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: colors.black,
+    overflow: 'hidden'
+  },
+  wardrobeProgressFill: {
+    height: '100%',
+    borderRadius: 3,
+    backgroundColor: colors.success
   },
   equipButton: {
     minWidth: 98,

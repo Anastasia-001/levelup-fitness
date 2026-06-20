@@ -56,6 +56,14 @@ The schema creates:
 - `missions`
 - Row Level Security policies so each user can only access their own data
 
+For an existing LevelUp Fitness database, apply additive migrations in filename order. The Wave 2 cosmetic catalog requires:
+
+```text
+supabase/migrations/202606200004_cosmetic_catalog_rotation_unlocks.sql
+```
+
+This migration preserves current inventory, adds the Aura equipment slot, and idempotently grants eligible achievement and personal-record cosmetics.
+
 ## Run Locally
 
 Start Expo:
