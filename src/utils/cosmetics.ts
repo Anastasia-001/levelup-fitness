@@ -18,6 +18,7 @@ export type CosmeticProgressContext = {
   streaks: ProgressionStreaks | null;
   characterLevel: number;
   fitnessClass?: FitnessClassId;
+  unlockedSkillNodeIds?: string[];
 };
 
 export const getShopRotation = (now = new Date()) => {
@@ -70,6 +71,11 @@ export const getCosmeticUnlockProgress = (
       ratio: earned ? 1 : 0,
       label: earned ? 'Class selected' : source.label
     };
+  }
+
+  if (source.type === 'skill_node') {
+    const earned = context.unlockedSkillNodeIds?.includes(source.id) ?? false;
+    return { current: earned ? 1 : 0, target: 1, ratio: earned ? 1 : 0, label: earned ? 'Skill unlocked' : source.label };
   }
 
   const unlocked = context.achievements.some((achievement) => achievement.achievementId === source.id);

@@ -95,6 +95,17 @@ const fitnessClass = (
   unlockSource: { type: 'fitness_class', id: fitnessClassId, label }
 });
 
+const skillNode = (
+  item: Omit<CosmeticItem, 'availability' | 'unlockSource' | 'price'>,
+  nodeId: string,
+  label: string
+): CosmeticItem => ({
+  ...item,
+  price: 0,
+  availability: 'earned',
+  unlockSource: { type: 'skill_node', id: nodeId, label }
+});
+
 export const COSMETICS: CosmeticItem[] = [
   starter({
     id: 'starter-band', name: 'Starter Training Band', category: 'head', shopSection: 'Accessories',
@@ -407,7 +418,28 @@ export const COSMETICS: CosmeticItem[] = [
     colors: { primary: '#8F5CFF', secondary: '#35F6FF', accent: '#47F39A' },
     description: 'A restrained three-tone training arc representing balanced physical progress.',
     visual: visual('aura', 'spectrum-arc', 'pulse')
-  }, 'hybrid_athlete', 'Choose the Hybrid Athlete class')
+  }, 'hybrid_athlete', 'Choose the Hybrid Athlete class'),
+  skillNode({
+    id: 'skill-long-route-badge', name: 'Long Route Badge', category: 'accessory', shopSection: 'Accessories',
+    rarity: 'rare', unlockLevel: 5,
+    colors: { primary: '#35F6FF', secondary: '#173C54', accent: '#FFFFFF' },
+    description: 'A compact route badge with layered distance markers and a reflective edge.',
+    visual: visual('accessory', 'route-badge', 'chevron')
+  }, 'endurance_long_route_badge', 'Unlock Long Route Badge in the Skill Tree'),
+  skillNode({
+    id: 'skill-training-outfit', name: 'Technical Training Top', category: 'shirt', shopSection: 'Shirts',
+    rarity: 'epic', unlockLevel: 5,
+    colors: { primary: '#17213B', secondary: '#FFB84D', accent: '#35F6FF' },
+    description: 'A structured strength top with reinforced warm trim and cyan performance seams.',
+    visual: visual('top', 'training-jacket', 'panel')
+  }, 'strength_training_outfit', 'Unlock Training Outfit in the Skill Tree'),
+  skillNode({
+    id: 'skill-streak-frame', name: 'Disciplined Streak Frame', category: 'frame', shopSection: 'Frames',
+    rarity: 'epic', unlockLevel: 5,
+    colors: { primary: '#47F39A', secondary: '#35F6FF', accent: '#8F5CFF' },
+    description: 'A precise mint frame with seven compact rhythm marks and cyan corners.',
+    visual: visual('frame', 'discipline-frame', 'stripe')
+  }, 'consistency_streak_frame', 'Unlock Streak Frame in the Skill Tree')
 ];
 
 export const SHOP_COSMETICS = COSMETICS.filter(

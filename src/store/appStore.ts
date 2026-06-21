@@ -10,6 +10,7 @@ import {
   PersonalRecord,
   Profile,
   ProgressionStreaks,
+  SkillTreeProgress,
   UserAchievement
 } from '@/types/domain';
 
@@ -25,6 +26,7 @@ type AppState = {
   achievements: UserAchievement[];
   personalRecords: PersonalRecord[];
   pendingLevelUps: LevelUpCelebration[];
+  skillTreeProgress: SkillTreeProgress | null;
   setProfile: (profile: Profile | null) => void;
   setCharacter: (character: Character | null) => void;
   setCharacterPresentation: (presentation: CharacterPresentation | null) => void;
@@ -36,6 +38,7 @@ type AppState = {
   setAchievements: (achievements: UserAchievement[]) => void;
   setPersonalRecords: (personalRecords: PersonalRecord[]) => void;
   setPendingLevelUps: (pendingLevelUps: LevelUpCelebration[]) => void;
+  setSkillTreeProgress: (skillTreeProgress: SkillTreeProgress | null) => void;
   removePendingLevelUp: (level: number) => void;
   addOwnedCosmetic: (ownedCosmetic: OwnedCosmetic) => void;
   addActivity: (activity: Activity) => void;
@@ -55,6 +58,7 @@ export const useAppStore = create<AppState>((set) => ({
   achievements: [],
   personalRecords: [],
   pendingLevelUps: [],
+  skillTreeProgress: null,
   setProfile: (profile) => set({ profile }),
   setCharacter: (character) => set({ character }),
   setCharacterPresentation: (characterPresentation) => set({ characterPresentation }),
@@ -67,6 +71,7 @@ export const useAppStore = create<AppState>((set) => ({
   setPersonalRecords: (personalRecords) => set({ personalRecords }),
   setPendingLevelUps: (pendingLevelUps) =>
     set({ pendingLevelUps: [...pendingLevelUps].sort((left, right) => left.level - right.level) }),
+  setSkillTreeProgress: (skillTreeProgress) => set({ skillTreeProgress }),
   removePendingLevelUp: (level) =>
     set((state) => ({ pendingLevelUps: state.pendingLevelUps.filter((item) => item.level !== level) })),
   addOwnedCosmetic: (ownedCosmetic) =>
@@ -92,6 +97,7 @@ export const useAppStore = create<AppState>((set) => ({
       progressionStreaks: null,
       achievements: [],
       personalRecords: [],
-      pendingLevelUps: []
+      pendingLevelUps: [],
+      skillTreeProgress: null
     })
 }));

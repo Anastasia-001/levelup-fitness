@@ -14,6 +14,7 @@ export type MissionGenerationContext = {
   recentActivities: Activity[];
   missionDate?: string;
   fitnessClass?: FitnessClassId;
+  unlockedSkillNodeIds?: string[];
 };
 
 const REWARD_RANGES: Record<
@@ -170,7 +171,7 @@ const buildMissionPool = (context: MissionGenerationContext): MissionTemplate[] 
       ? { optionalUnlockId: 'boss-quest-clear', optionalUnlockName: 'Boss Quest Clear badge' }
       : {};
     const activityTarget = difficulty === 'easy' ? 1 : difficulty === 'medium' ? 1 : difficulty === 'hard' ? 2 : 3;
-    const templates = [
+    const templates: MissionTemplate[] = [
       createTemplate(
         `${difficulty}-activity-rhythm`,
         'complete_activity',
@@ -212,6 +213,19 @@ const buildMissionPool = (context: MissionGenerationContext): MissionTemplate[] 
         context.userLevel
       )
     ];
+
+    if (context.unlockedSkillNodeIds?.includes('endurance_recovery_missions') && difficulty !== 'boss') {
+      templates.push(createTemplate(
+        `${difficulty}-recovery-duration`,
+        'workout_duration',
+        `Complete ${Math.max(5, Math.round(durationTargets[difficulty] / 120))} recovery-friendly active minutes`,
+        Math.max(300, durationTargets[difficulty] / 2),
+        difficulty,
+        0.2,
+        {},
+        context.userLevel
+      ));
+    }
 
     return templates.filter((template) => {
       if (difficulty === 'easy' || difficulty === 'medium') return true;

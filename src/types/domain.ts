@@ -16,13 +16,15 @@ export type CharacterPoseId =
   | 'confident';
 export type EvolutionStageId = 'starter' | 'trainee' | 'athlete' | 'elite';
 export type FitnessClassId = 'runner' | 'lifter' | 'explorer' | 'hybrid_athlete';
+export type SkillBranch = 'endurance' | 'speed' | 'strength' | 'consistency';
 export type CosmeticAvailability = 'permanent' | 'featured' | 'seasonal' | 'earned';
 export type CosmeticUnlockSource =
   | { type: 'starter'; label: string }
   | { type: 'shop'; label: string }
   | { type: 'achievement'; id: string; label: string }
   | { type: 'personal_record'; id: PersonalRecordType; label: string }
-  | { type: 'fitness_class'; id: FitnessClassId; label: string };
+  | { type: 'fitness_class'; id: FitnessClassId; label: string }
+  | { type: 'skill_node'; id: string; label: string };
 
 export type CosmeticVisual = {
   thumbnailComponent: 'headwear' | 'top' | 'bottom' | 'footwear' | 'accessory' | 'frame' | 'aura';
@@ -130,7 +132,7 @@ export type OwnedCosmetic = {
   userId: string;
   itemId: string;
   acquiredAt: string;
-  acquisitionSource: 'shop' | 'achievement' | 'personal_record' | 'fitness_class' | 'starter';
+  acquisitionSource: 'shop' | 'achievement' | 'personal_record' | 'fitness_class' | 'skill_tree' | 'starter';
   sourceRef?: string | null;
 };
 
@@ -157,6 +159,27 @@ export type EvolutionStageDefinition = {
   sceneColor: string;
   trimColor: string;
   postureScale: number;
+};
+
+export type SkillNodeDefinition = {
+  id: string;
+  branch: SkillBranch;
+  name: string;
+  description: string;
+  pointCost: number;
+  requiredLevel: number;
+  prerequisiteNodeId: string | null;
+  effectKey: string;
+  icon: string;
+};
+
+export type SkillTreeProgress = {
+  userId: string;
+  pointsEarned: number;
+  pointsSpent: number;
+  availablePoints: number;
+  unlockedNodeIds: string[];
+  updatedAt: string;
 };
 
 export type EquippedCosmetics = {
@@ -463,19 +486,19 @@ export type Database = {
           user_id: string;
           item_id: string;
           acquired_at: string;
-          acquisition_source: 'shop' | 'achievement' | 'personal_record' | 'fitness_class' | 'starter';
+          acquisition_source: 'shop' | 'achievement' | 'personal_record' | 'fitness_class' | 'skill_tree' | 'starter';
           source_ref: string | null;
         };
         Insert: {
           user_id: string;
           item_id: string;
           acquired_at?: string;
-          acquisition_source?: 'shop' | 'achievement' | 'personal_record' | 'fitness_class' | 'starter';
+          acquisition_source?: 'shop' | 'achievement' | 'personal_record' | 'fitness_class' | 'skill_tree' | 'starter';
           source_ref?: string | null;
         };
         Update: {
           item_id?: string;
-          acquisition_source?: 'shop' | 'achievement' | 'personal_record' | 'fitness_class' | 'starter';
+          acquisition_source?: 'shop' | 'achievement' | 'personal_record' | 'fitness_class' | 'skill_tree' | 'starter';
           source_ref?: string | null;
         };
         Relationships: [];
@@ -532,6 +555,38 @@ export type Database = {
           highest_evolution_stage?: EvolutionStageId;
           fitness_class?: FitnessClassId;
         };
+        Relationships: [];
+      };
+      skill_tree_catalog: {
+        Row: {
+          id: string;
+          branch: SkillBranch;
+          name: string;
+          description: string;
+          point_cost: number;
+          required_level: number;
+          prerequisite_node_id: string | null;
+          effect_key: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      skill_tree_progress: {
+        Row: {
+          user_id: string;
+          points_earned: number;
+          points_spent: number;
+          updated_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      user_skill_nodes: {
+        Row: { user_id: string; node_id: string; unlocked_at: string };
+        Insert: never;
+        Update: never;
         Relationships: [];
       };
       progression_streaks: {
@@ -612,6 +667,7 @@ export type Database = {
           mission_id: string;
           original_mission: unknown;
           replacement_template_id: string;
+          reroll_index: number;
           used_at: string;
         };
         Insert: never;
@@ -687,6 +743,14 @@ export type Database = {
       set_fitness_class: {
         Args: { p_class: FitnessClassId };
         Returns: Database['public']['Tables']['character_presentations']['Row'];
+      };
+      sync_skill_tree_progress: {
+        Args: Record<string, never>;
+        Returns: Database['public']['Tables']['skill_tree_progress']['Row'];
+      };
+      unlock_skill_node: {
+        Args: { p_node_id: string };
+        Returns: Database['public']['Tables']['skill_tree_progress']['Row'];
       };
     };
     Enums: {

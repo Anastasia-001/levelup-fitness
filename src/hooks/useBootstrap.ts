@@ -6,6 +6,7 @@ import { listPendingLevelUps } from '@/services/levelUpService';
 import { getTodayMissions } from '@/services/missionService';
 import { getCharacter, getProfile } from '@/services/profileService';
 import { refreshProgressionMilestones } from '@/services/progressionService';
+import { syncSkillTreeProgress } from '@/services/skillTreeService';
 import { useAppStore } from '@/store/appStore';
 
 export const useBootstrap = () => {
@@ -22,6 +23,7 @@ export const useBootstrap = () => {
   const setAchievements = useAppStore((state) => state.setAchievements);
   const setPersonalRecords = useAppStore((state) => state.setPersonalRecords);
   const setPendingLevelUps = useAppStore((state) => state.setPendingLevelUps);
+  const setSkillTreeProgress = useAppStore((state) => state.setSkillTreeProgress);
 
   const bootstrap = useCallback(
     async (userId: string) => {
@@ -56,6 +58,14 @@ export const useBootstrap = () => {
         } catch (caught) {
           if (__DEV__) {
             console.warn('[LevelUp] Character presentation could not be loaded.', caught);
+          }
+        }
+
+        try {
+          setSkillTreeProgress(await syncSkillTreeProgress(userId));
+        } catch (caught) {
+          if (__DEV__) {
+            console.warn('[LevelUp] Skill tree progress could not be loaded.', caught);
           }
         }
 
@@ -107,7 +117,8 @@ export const useBootstrap = () => {
       setPersonalRecords,
       setPendingLevelUps,
       setProfile,
-      setProgressionStreaks
+      setProgressionStreaks,
+      setSkillTreeProgress
     ]
   );
 

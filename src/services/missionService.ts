@@ -41,15 +41,24 @@ export const getTodayMissions = async (userId: string) => {
 };
 
 export const getDailyRerollsRemaining = async (userId: string, missionDate = localDateKey()) => {
-  const { data, error } = await supabase
-    .from('mission_daily_rerolls')
-    .select('used_at')
-    .eq('user_id', userId)
-    .eq('mission_date', missionDate)
-    .maybeSingle();
+  const [usage, bonus] = await Promise.all([
+    supabase
+      .from('mission_daily_rerolls')
+      .select('used_at', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('mission_date', missionDate),
+    supabase
+      .from('user_skill_nodes')
+      .select('node_id')
+      .eq('user_id', userId)
+      .eq('node_id', 'consistency_reroll_token')
+      .maybeSingle()
+  ]);
 
-  if (error) throw error;
-  return data ? 0 : 1;
+  if (usage.error) throw usage.error;
+  if (bonus.error) throw bonus.error;
+  const allowance = bonus.data ? 2 : 1;
+  return Math.max(0, allowance - (usage.count ?? 0));
 };
 
 export const rerollMission = async (
@@ -101,7 +110,7 @@ const getMissionGenerationContext = async (
 ): Promise<MissionGenerationContext> => {
   const since = new Date();
   since.setDate(since.getDate() - 28);
-  const [character, presentation, activityResult] = await Promise.all([
+  const [character, presentation, activityResult, skillResult] = await Promise.all([
     getCharacter(userId),
     syncCharacterPresentation(),
     supabase
@@ -109,13 +118,16 @@ const getMissionGenerationContext = async (
       .select('*')
       .eq('user_id', userId)
       .gte('completed_at', since.toISOString())
-      .order('completed_at', { ascending: false })
+      .order('completed_at', { ascending: false }),
+    supabase.from('user_skill_nodes').select('node_id').eq('user_id', userId)
   ]);
 
   if (activityResult.error) throw activityResult.error;
+  if (skillResult.error) throw skillResult.error;
   return {
     userLevel: character.level,
     fitnessClass: presentation.fitnessClass,
+    unlockedSkillNodeIds: skillResult.data.map((row) => row.node_id),
     recentActivities: activityResult.data.map(mapActivity),
     missionDate
   };

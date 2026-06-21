@@ -31,6 +31,7 @@ export default function ShopScreen() {
   const personalRecords = useAppStore((state) => state.personalRecords);
   const streaks = useAppStore((state) => state.progressionStreaks);
   const presentation = useAppStore((state) => state.characterPresentation);
+  const skillTreeProgress = useAppStore((state) => state.skillTreeProgress);
   const ownedCosmetics = useAppStore((state) => state.ownedCosmetics);
   const equippedCosmetics = useAppStore((state) => state.equippedCosmetics);
   const setCharacter = useAppStore((state) => state.setCharacter);
@@ -52,9 +53,10 @@ export default function ShopScreen() {
       personalRecords,
       streaks,
       characterLevel: level,
-      fitnessClass: presentation?.fitnessClass
+      fitnessClass: presentation?.fitnessClass,
+      unlockedSkillNodeIds: skillTreeProgress?.unlockedNodeIds
     }),
-    [achievements, activities, level, personalRecords, presentation?.fitnessClass, streaks]
+    [achievements, activities, level, personalRecords, presentation?.fitnessClass, skillTreeProgress?.unlockedNodeIds, streaks]
   );
 
   const sections = useMemo<ShopSection[]>(() => {

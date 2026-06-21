@@ -177,6 +177,7 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
   const ownedCosmetics = useAppStore((state) => state.ownedCosmetics);
   const equippedCosmetics = useAppStore((state) => state.equippedCosmetics);
   const presentation = useAppStore((state) => state.characterPresentation);
+  const skillTreeProgress = useAppStore((state) => state.skillTreeProgress);
   const setEquippedCosmetics = useAppStore((state) => state.setEquippedCosmetics);
   const setCharacterPresentation = useAppStore((state) => state.setCharacterPresentation);
   const [userId, setUserId] = useState<string | null>(null);
@@ -191,9 +192,10 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
       personalRecords,
       streaks,
       characterLevel: character?.level ?? 1,
-      fitnessClass: presentation?.fitnessClass
+      fitnessClass: presentation?.fitnessClass,
+      unlockedSkillNodeIds: skillTreeProgress?.unlockedNodeIds
     }),
-    [achievements, activities, character?.level, personalRecords, presentation?.fitnessClass, streaks]
+    [achievements, activities, character?.level, personalRecords, presentation?.fitnessClass, skillTreeProgress?.unlockedNodeIds, streaks]
   );
 
   useEffect(() => {
@@ -224,7 +226,7 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
   };
 
   const selectPose = async (pose: CharacterPoseDefinition) => {
-    if (!isPoseUnlocked(pose.id, { activities, achievements, missions, streaks, level: character?.level ?? 1 })) return;
+    if (!isPoseUnlocked(pose.id, { activities, achievements, missions, streaks, level: character?.level ?? 1, unlockedNodeIds: skillTreeProgress?.unlockedNodeIds ?? [] })) return;
     setPoseSavingId(pose.id);
     try {
       setCharacterPresentation(await setCharacterPose(pose.id));
@@ -291,7 +293,8 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
                 achievements,
                 missions,
                 streaks,
-                level: character?.level ?? 1
+                level: character?.level ?? 1,
+                unlockedNodeIds: skillTreeProgress?.unlockedNodeIds ?? []
               });
               return (
                 <View key={`pose-${pose.id}`} style={[styles.poseRow, selected && styles.poseRowSelected]}>
@@ -414,11 +417,13 @@ const isPoseUnlocked = (
     missions: Mission[];
     streaks: ProgressionStreaks | null;
     level: number;
+    unlockedNodeIds: string[];
   }
 ) => {
   if (pose === 'neutral') return true;
   if (pose === 'ready_to_run') {
-    return context.achievements.some((achievement) => achievement.achievementId === 'first_gps_activity') ||
+    return context.unlockedNodeIds.includes('speed_sprint_pose') ||
+      context.achievements.some((achievement) => achievement.achievementId === 'first_gps_activity') ||
       context.activities.some((activity) => ['run', 'walk', 'bike', 'hike'].includes(activity.type));
   }
   if (pose === 'stretch') {

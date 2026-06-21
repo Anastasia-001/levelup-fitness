@@ -12,6 +12,7 @@ import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { COSMETICS } from '@/constants/cosmetics';
 import { getEvolutionStageForLevel } from '@/constants/characterProgression';
+import { SKILL_POINT_LEVELS } from '@/constants/skillTree';
 import { colors, radii, shadows, spacing } from '@/constants/theme';
 import { LevelUpCelebration as LevelUpCelebrationModel } from '@/types/domain';
 
@@ -56,7 +57,10 @@ export const LevelUpCelebration = ({
         : `Shop item available: ${item.name}`
     );
     const stageUnlocks = evolutionStage ? [`Evolution stage: ${evolutionStage.name}`] : [];
-    return [...new Set([...additionalUnlocks, ...stageUnlocks, ...levelUnlocks])];
+    const skillUnlocks = SKILL_POINT_LEVELS.includes(celebration.level as typeof SKILL_POINT_LEVELS[number])
+      ? ['Skill point earned']
+      : [];
+    return [...new Set([...additionalUnlocks, ...stageUnlocks, ...skillUnlocks, ...levelUnlocks])];
   }, [additionalUnlocks, celebration, evolutionStage]);
 
   useEffect(() => {

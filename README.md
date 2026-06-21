@@ -76,6 +76,12 @@ Stat titles are client-side. Fitness class persistence and class-earned cosmetic
 supabase/migrations/202606210002_fitness_classes.sql
 ```
 
+Mission skill points, server-validated node spending, skill cosmetics, and the optional second daily reroll require:
+
+```text
+supabase/migrations/202606210003_mission_skill_tree.sql
+```
+
 ## Run Locally
 
 Start Expo:
