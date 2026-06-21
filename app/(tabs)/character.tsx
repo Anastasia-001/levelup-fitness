@@ -5,14 +5,16 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { AppText } from '@/components/AppText';
 import { AvatarPreview } from '@/components/AvatarPreview';
 import { CosmeticThumbnail, RARITY_COLORS } from '@/components/CosmeticThumbnail';
+import { FitnessClassPicker } from '@/components/FitnessClassPicker';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { Screen } from '@/components/Screen';
 import { CATEGORY_LABELS, COSMETIC_CATEGORIES, visibleCosmeticsForCategory } from '@/constants/cosmetics';
 import { CHARACTER_POSES, getEvolutionStage } from '@/constants/characterProgression';
+import { getFitnessClass, getStatTitle } from '@/constants/fitnessClasses';
 import { colors, radii, shadows, spacing } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
-import { equipCosmetic } from '@/services/cosmeticService';
-import { setCharacterPose } from '@/services/characterPresentationService';
+import { equipCosmetic, syncEarnedCosmetics } from '@/services/cosmeticService';
+import { setCharacterPose, setFitnessClass } from '@/services/characterPresentationService';
 import { useAppStore } from '@/store/appStore';
 import {
   Activity,
@@ -28,10 +30,10 @@ import { levelFromTotalExp, statLevel } from '@/utils/exp';
 import { getCosmeticUnlockProgress } from '@/utils/cosmetics';
 
 const statRows = [
-  ['Endurance', 'enduranceExp', 'pulse-outline'],
-  ['Speed', 'speedExp', 'speedometer-outline'],
-  ['Strength', 'strengthExp', 'barbell-outline'],
-  ['Consistency', 'consistencyExp', 'calendar-outline']
+  ['Endurance', 'enduranceExp', 'endurance', 'pulse-outline'],
+  ['Speed', 'speedExp', 'speed', 'speedometer-outline'],
+  ['Strength', 'strengthExp', 'strength', 'barbell-outline'],
+  ['Consistency', 'consistencyExp', 'consistency', 'calendar-outline']
 ] as const;
 
 type WardrobeCategory = CosmeticCategory | 'poses';
@@ -44,9 +46,25 @@ export default function CharacterScreen() {
   const progress = character ? levelFromTotalExp(character.totalExp) : null;
   const diamonds = 0;
   const [customizing, setCustomizing] = useState(false);
+  const [classPickerVisible, setClassPickerVisible] = useState(false);
+  const activities = useAppStore((state) => state.activities);
+  const setCharacterPresentation = useAppStore((state) => state.setCharacterPresentation);
+  const addOwnedCosmetic = useAppStore((state) => state.addOwnedCosmetic);
   const { height: screenHeight } = useWindowDimensions();
   const avatarHeight = Math.min(520, Math.max(340, screenHeight - 320));
   const evolution = getEvolutionStage(presentation?.highestEvolutionStage);
+  const fitnessClass = getFitnessClass(presentation?.fitnessClass);
+
+  const chooseFitnessClass = async (nextClass: Parameters<typeof setFitnessClass>[0]) => {
+    try {
+      setCharacterPresentation(await setFitnessClass(nextClass));
+      const unlocked = await syncEarnedCosmetics();
+      unlocked.forEach(addOwnedCosmetic);
+    } catch (caught) {
+      Alert.alert('Could not change class', caught instanceof Error ? caught.message : 'Try again.');
+      throw caught;
+    }
+  };
 
   return (
     <Screen scroll={false}>
@@ -99,6 +117,13 @@ export default function CharacterScreen() {
             <AppText variant="caption" style={{ color: evolution.sceneColor }}>{evolution.name}</AppText>
           </View>
         </Pressable>
+        <Pressable
+          onPress={() => setClassPickerVisible(true)}
+          style={[styles.classBadge, { borderColor: fitnessClass.accent }]}
+        >
+          <Ionicons name={fitnessClass.icon} size={13} color={fitnessClass.accent} />
+          <AppText variant="caption" style={{ color: fitnessClass.accent }}>{fitnessClass.name}</AppText>
+        </Pressable>
         <Pressable onPress={() => setCustomizing(true)} style={({ pressed }) => [styles.wardrobeButton, pressed && styles.pressed]}>
           <Ionicons name="shirt-outline" size={18} color={colors.primary} />
           <AppText style={styles.wardrobeButtonText}>Open wardrobe</AppText>
@@ -106,8 +131,10 @@ export default function CharacterScreen() {
       </View>
 
       <View style={styles.statsGrid}>
-        {statRows.map(([label, key, icon]) => {
+        {statRows.map(([label, key, statKey, icon]) => {
           const exp = character?.[key] ?? 0;
+          const level = statLevel(exp);
+          const title = getStatTitle(statKey, level);
           return (
             <View key={key} style={styles.statCard}>
               <View style={styles.statHeader}>
@@ -115,11 +142,13 @@ export default function CharacterScreen() {
                 <AppText variant="caption" style={styles.statLabel}>{label}</AppText>
               </View>
               <View style={styles.statValueRow}>
-                <AppText style={styles.statLevel}>Lv {statLevel(exp)}</AppText>
+                <AppText style={styles.statLevel}>Lv {level}</AppText>
                 <AppText variant="caption" muted style={styles.statExpText}>
                   {exp} EXP
                 </AppText>
               </View>
+              <AppText variant="caption" numberOfLines={1} style={styles.statTitle}>{title.current.title}</AppText>
+              {title.next && <AppText variant="caption" muted numberOfLines={1}>Next: Lv {title.next.minimumLevel}</AppText>}
               <MiniProgress value={(exp % 100) / 100} />
             </View>
           );
@@ -127,6 +156,13 @@ export default function CharacterScreen() {
       </View>
 
       <WardrobeModal visible={customizing} onClose={() => setCustomizing(false)} />
+      <FitnessClassPicker
+        visible={classPickerVisible}
+        current={presentation?.fitnessClass ?? 'hybrid_athlete'}
+        activities={activities}
+        onClose={() => setClassPickerVisible(false)}
+        onSelect={chooseFitnessClass}
+      />
     </Screen>
   );
 }
@@ -154,9 +190,10 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
       achievements,
       personalRecords,
       streaks,
-      characterLevel: character?.level ?? 1
+      characterLevel: character?.level ?? 1,
+      fitnessClass: presentation?.fitnessClass
     }),
-    [achievements, activities, character?.level, personalRecords, streaks]
+    [achievements, activities, character?.level, personalRecords, presentation?.fitnessClass, streaks]
   );
 
   useEffect(() => {
@@ -556,6 +593,20 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     zIndex: 10
   },
+  classBadge: {
+    position: 'absolute',
+    top: spacing.sm,
+    left: spacing.md,
+    zIndex: 12,
+    minHeight: 30,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    backgroundColor: 'rgba(3, 7, 19, 0.9)',
+    paddingHorizontal: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs
+  },
   statsGrid: {
     flexDirection: 'row',
     gap: spacing.xs,
@@ -580,6 +631,11 @@ const styles = StyleSheet.create({
   statLabel: {
     color: colors.primary,
     fontSize: 8
+  },
+  statTitle: {
+    color: colors.text,
+    fontSize: 7,
+    fontWeight: '800'
   },
   statValueRow: {
     flexDirection: 'row',

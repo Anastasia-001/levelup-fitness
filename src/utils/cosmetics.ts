@@ -2,6 +2,7 @@ import { SHOP_COSMETICS } from '@/constants/cosmetics';
 import {
   Activity,
   CosmeticItem,
+  FitnessClassId,
   PersonalRecord,
   ProgressionStreaks,
   UserAchievement
@@ -16,6 +17,7 @@ export type CosmeticProgressContext = {
   personalRecords: PersonalRecord[];
   streaks: ProgressionStreaks | null;
   characterLevel: number;
+  fitnessClass?: FitnessClassId;
 };
 
 export const getShopRotation = (now = new Date()) => {
@@ -58,6 +60,16 @@ export const getCosmeticUnlockProgress = (
   if (source.type === 'personal_record') {
     const earned = context.personalRecords.some((record) => record.recordType === source.id);
     return { current: earned ? 1 : 0, target: 1, ratio: earned ? 1 : 0, label: earned ? 'Record earned' : '0 / 1 record' };
+  }
+
+  if (source.type === 'fitness_class') {
+    const earned = context.fitnessClass === source.id;
+    return {
+      current: earned ? 1 : 0,
+      target: 1,
+      ratio: earned ? 1 : 0,
+      label: earned ? 'Class selected' : source.label
+    };
   }
 
   const unlocked = context.achievements.some((achievement) => achievement.achievementId === source.id);

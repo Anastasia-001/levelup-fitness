@@ -4,13 +4,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { ActivityHistoryList } from '@/components/ActivityHistoryList';
 import { AppText } from '@/components/AppText';
 import { Card } from '@/components/Card';
+import { FitnessClassPicker } from '@/components/FitnessClassPicker';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { Screen } from '@/components/Screen';
 import { TextField } from '@/components/TextField';
 import { ACHIEVEMENTS } from '@/constants/achievements';
 import { ACTIVITY_LABELS } from '@/constants/activities';
+import { getFitnessClass } from '@/constants/fitnessClasses';
 import { colors, radii, spacing } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
+import { setFitnessClass } from '@/services/characterPresentationService';
+import { syncEarnedCosmetics } from '@/services/cosmeticService';
 import { updateProfile } from '@/services/profileService';
 import { useAppStore } from '@/store/appStore';
 import { PersonalRecord, Profile, UnitPreference, UserAchievement } from '@/types/domain';
@@ -23,6 +27,8 @@ export default function MeScreen() {
   const streaks = useAppStore((state) => state.progressionStreaks);
   const achievements = useAppStore((state) => state.achievements);
   const personalRecords = useAppStore((state) => state.personalRecords);
+  const presentation = useAppStore((state) => state.characterPresentation);
+  const fitnessClass = getFitnessClass(presentation?.fitnessClass);
   const units = profile?.unitPreference ?? 'metric';
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [achievementsVisible, setAchievementsVisible] = useState(false);
@@ -41,6 +47,10 @@ export default function MeScreen() {
           <View style={{ flex: 1 }}>
             <AppText variant="title">{profile?.username ?? 'Rookie'}</AppText>
             <AppText muted>{profile?.location || 'Set your location'}</AppText>
+            <View style={styles.profileClassRow}>
+              <Ionicons name={fitnessClass.icon} size={14} color={fitnessClass.accent} />
+              <AppText variant="caption" style={{ color: fitnessClass.accent }}>{fitnessClass.name}</AppText>
+            </View>
           </View>
         </View>
         <Pressable onPress={() => setSettingsVisible(true)} style={styles.settingsButton}>
@@ -275,8 +285,14 @@ const SettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
   const profile = useAppStore((state) => state.profile);
   const setProfile = useAppStore((state) => state.setProfile);
   const reset = useAppStore((state) => state.reset);
+  const activities = useAppStore((state) => state.activities);
+  const presentation = useAppStore((state) => state.characterPresentation);
+  const setCharacterPresentation = useAppStore((state) => state.setCharacterPresentation);
+  const addOwnedCosmetic = useAppStore((state) => state.addOwnedCosmetic);
   const [draft, setDraft] = useState<Profile | null>(profile);
   const [email, setEmail] = useState('');
+  const [classPickerVisible, setClassPickerVisible] = useState(false);
+  const fitnessClass = getFitnessClass(presentation?.fitnessClass);
 
   useEffect(() => {
     setDraft(profile);
@@ -323,6 +339,17 @@ const SettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
     setEmail('');
   };
 
+  const chooseFitnessClass = async (nextClass: Parameters<typeof setFitnessClass>[0]) => {
+    try {
+      setCharacterPresentation(await setFitnessClass(nextClass));
+      const unlocked = await syncEarnedCosmetics();
+      unlocked.forEach(addOwnedCosmetic);
+    } catch (caught) {
+      Alert.alert('Could not change class', caught instanceof Error ? caught.message : 'Try again.');
+      throw caught;
+    }
+  };
+
   if (!draft) return null;
 
   return (
@@ -356,6 +383,16 @@ const SettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
               value={draft.unitPreference}
               onChange={(unitPreference) => setDraft({ ...draft, unitPreference })}
             />
+            <Pressable onPress={() => setClassPickerVisible(true)} style={styles.classSetting}>
+              <View style={[styles.classSettingIcon, { borderColor: fitnessClass.accent }]}>
+                <Ionicons name={fitnessClass.icon} size={20} color={fitnessClass.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <AppText>Fitness class</AppText>
+                <AppText variant="caption" muted>{fitnessClass.name} - tap to change</AppText>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+            </Pressable>
             <SettingsSwitch label="Privacy controls" value={draft.privacyControlsEnabled} onChange={(privacyControlsEnabled) => setDraft({ ...draft, privacyControlsEnabled })} />
             <SettingsSwitch label="Health data" value={draft.healthDataEnabled} onChange={(healthDataEnabled) => setDraft({ ...draft, healthDataEnabled })} />
             <SettingsSwitch label="Email notifications" value={draft.emailNotificationsEnabled} onChange={(emailNotificationsEnabled) => setDraft({ ...draft, emailNotificationsEnabled })} />
@@ -364,6 +401,13 @@ const SettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
             <PrimaryButton label="Log out" variant="secondary" onPress={logout} />
             <PrimaryButton label="Delete account" variant="danger" onPress={() => Alert.alert('Delete account', 'Account deletion flow placeholder.')} />
           </ScrollView>
+          <FitnessClassPicker
+            visible={classPickerVisible}
+            current={presentation?.fitnessClass ?? 'hybrid_athlete'}
+            activities={activities}
+            onClose={() => setClassPickerVisible(false)}
+            onSelect={chooseFitnessClass}
+          />
         </View>
       </View>
     </Modal>
@@ -432,6 +476,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md
+  },
+  profileClassRow: {
+    marginTop: spacing.xxs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs
   },
   avatar: {
     width: 70,
@@ -625,6 +675,25 @@ const styles = StyleSheet.create({
   settingsContent: {
     gap: spacing.md,
     paddingBottom: spacing.lg
+  },
+  classSetting: {
+    minHeight: 64,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.cardHigh,
+    paddingHorizontal: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm
+  },
+  classSettingIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   emailRow: {
     flexDirection: 'row',

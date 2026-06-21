@@ -2,6 +2,7 @@ import {
   CosmeticCategory,
   CosmeticItem,
   CosmeticVisual,
+  FitnessClassId,
   PersonalRecordType
 } from '@/types/domain';
 
@@ -81,6 +82,17 @@ const record = (
   price: 0,
   availability: 'earned',
   unlockSource: { type: 'personal_record', id: recordType, label }
+});
+
+const fitnessClass = (
+  item: Omit<CosmeticItem, 'availability' | 'unlockSource' | 'price'>,
+  fitnessClassId: FitnessClassId,
+  label: string
+): CosmeticItem => ({
+  ...item,
+  price: 0,
+  availability: 'earned',
+  unlockSource: { type: 'fitness_class', id: fitnessClassId, label }
 });
 
 export const COSMETICS: CosmeticItem[] = [
@@ -367,7 +379,35 @@ export const COSMETICS: CosmeticItem[] = [
     colors: { primary: '#FFD66E', secondary: '#35F6FF', accent: '#8F5CFF' },
     description: 'A broad gold distance arc grounded by two cyan route markers.',
     visual: visual('aura', 'distance-arc', 'streak')
-  }, 'longest_distance', 'Set a longest-distance personal record')
+  }, 'longest_distance', 'Set a longest-distance personal record'),
+  fitnessClass({
+    id: 'runner-route-band', name: 'Runner Route Band', category: 'head', shopSection: 'Accessories',
+    rarity: 'rare', unlockLevel: 1,
+    colors: { primary: '#35F6FF', secondary: '#10213B', accent: '#FFFFFF' },
+    description: 'A streamlined training band traced with a compact cyan route line.',
+    visual: visual('headwear', 'route-band', 'streak')
+  }, 'runner', 'Choose the Runner class'),
+  fitnessClass({
+    id: 'lifter-power-wrap', name: 'Lifter Power Wrap', category: 'accessory', shopSection: 'Accessories',
+    rarity: 'rare', unlockLevel: 1,
+    colors: { primary: '#FFB84D', secondary: '#251A17', accent: '#FFFFFF' },
+    description: 'A layered wrist wrap with warm reinforced trim and a clean grip mark.',
+    visual: visual('accessory', 'power-wrap', 'stripe')
+  }, 'lifter', 'Choose the Lifter class'),
+  fitnessClass({
+    id: 'explorer-trail-frame', name: 'Explorer Trail Frame', category: 'frame', shopSection: 'Frames',
+    rarity: 'rare', unlockLevel: 1,
+    colors: { primary: '#47F39A', secondary: '#17352D', accent: '#35F6FF' },
+    description: 'A mint route frame marked by subtle trail corners and a cyan waypoint.',
+    visual: visual('frame', 'trail-route', 'chevron')
+  }, 'explorer', 'Choose the Explorer class'),
+  fitnessClass({
+    id: 'hybrid-spectrum-aura', name: 'Hybrid Spectrum Aura', category: 'aura', shopSection: 'Auras',
+    rarity: 'epic', unlockLevel: 1,
+    colors: { primary: '#8F5CFF', secondary: '#35F6FF', accent: '#47F39A' },
+    description: 'A restrained three-tone training arc representing balanced physical progress.',
+    visual: visual('aura', 'spectrum-arc', 'pulse')
+  }, 'hybrid_athlete', 'Choose the Hybrid Athlete class')
 ];
 
 export const SHOP_COSMETICS = COSMETICS.filter(

@@ -100,6 +100,9 @@ create table public.character_presentations (
   highest_evolution_stage text not null default 'starter' check (highest_evolution_stage in (
     'starter', 'trainee', 'athlete', 'elite'
   )),
+  fitness_class text not null default 'hybrid_athlete' check (fitness_class in (
+    'runner', 'lifter', 'explorer', 'hybrid_athlete'
+  )),
   updated_at timestamptz not null default now()
 );
 
@@ -126,7 +129,7 @@ create table public.owned_cosmetics (
   user_id uuid not null references auth.users(id) on delete cascade,
   item_id text not null,
   acquired_at timestamptz not null default now(),
-  acquisition_source text not null default 'shop' check (acquisition_source in ('shop', 'achievement', 'personal_record', 'starter')),
+  acquisition_source text not null default 'shop' check (acquisition_source in ('shop', 'achievement', 'personal_record', 'fitness_class', 'starter')),
   source_ref text,
   primary key (user_id, item_id)
 );
@@ -198,7 +201,7 @@ create table public.personal_records (
 
 create table public.cosmetic_unlock_catalog (
   item_id text primary key,
-  source_type text not null check (source_type in ('achievement', 'personal_record')),
+  source_type text not null check (source_type in ('achievement', 'personal_record', 'fitness_class')),
   source_id text not null,
   requirement_label text not null
 );
@@ -293,7 +296,11 @@ values
   ('committed-25-jacket', 'achievement', 'twenty_five_activities', 'Complete 25 activities'),
   ('level-ten-crown-band', 'achievement', 'character_level_10', 'Reach character Level 10'),
   ('pace-record-wristband', 'personal_record', 'fastest_5_km', 'Set a fastest 5 km personal record'),
-  ('distance-record-aura', 'personal_record', 'longest_distance', 'Set a longest-distance personal record');
+  ('distance-record-aura', 'personal_record', 'longest_distance', 'Set a longest-distance personal record'),
+  ('runner-route-band', 'fitness_class', 'runner', 'Choose the Runner class'),
+  ('lifter-power-wrap', 'fitness_class', 'lifter', 'Choose the Lifter class'),
+  ('explorer-trail-frame', 'fitness_class', 'explorer', 'Choose the Explorer class'),
+  ('hybrid-spectrum-aura', 'fitness_class', 'hybrid_athlete', 'Choose the Hybrid Athlete class');
 
 insert into storage.buckets (id, name, public)
 values ('activity-photos', 'activity-photos', true)
@@ -407,6 +414,26 @@ begin
 end;
 $$;
 
+create or replace function public.set_fitness_class(p_class text)
+returns public.character_presentations
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_result public.character_presentations;
+begin
+  if v_user_id is null then raise exception 'Authentication required'; end if;
+  if p_class not in ('runner', 'lifter', 'explorer', 'hybrid_athlete') then
+    raise exception 'Unknown fitness class';
+  end if;
+  perform public.sync_character_presentation();
+  update public.character_presentations
+  set fitness_class = p_class, updated_at = now()
+  where user_id = v_user_id returning * into v_result;
+  return v_result;
+end;
+$$;
+
 create or replace function public.sync_character_evolution_trigger()
 returns trigger language plpgsql security definer set search_path = public
 as $$
@@ -431,9 +458,11 @@ revoke all on function public.evolution_stage_for_level(integer) from public;
 revoke all on function public.evolution_stage_rank(text) from public;
 revoke all on function public.sync_character_presentation() from public;
 revoke all on function public.set_character_pose(text) from public;
+revoke all on function public.set_fitness_class(text) from public;
 revoke all on function public.sync_character_evolution_trigger() from public;
 grant execute on function public.sync_character_presentation() to authenticated;
 grant execute on function public.set_character_pose(text) to authenticated;
+grant execute on function public.set_fitness_class(text) to authenticated;
 
 insert into public.achievement_catalog
   (id, title, description, category, icon, condition_key, condition_target, reward_exp, reward_coins, claim_required)
@@ -981,6 +1010,13 @@ begin
         select 1 from public.personal_records records
         where records.user_id = v_user_id
           and records.record_type = unlocks.source_id
+      )
+    ) or (
+      unlocks.source_type = 'fitness_class'
+      and exists (
+        select 1 from public.character_presentations presentation
+        where presentation.user_id = v_user_id
+          and presentation.fitness_class = unlocks.source_id
       )
     )
   ), inserted as (

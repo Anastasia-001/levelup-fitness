@@ -6,6 +6,7 @@ import { Card } from '@/components/Card';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { ProgressBar } from '@/components/ProgressBar';
 import { Screen } from '@/components/Screen';
+import { getFitnessClass } from '@/constants/fitnessClasses';
 import { colors, radii, spacing } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { getDailyRerollsRemaining, getTodayMissions, rerollMission } from '@/services/missionService';
@@ -15,6 +16,8 @@ import { Mission, MissionDifficulty } from '@/types/domain';
 export default function MissionsScreen() {
   const missions = useAppStore((state) => state.missions);
   const setMissions = useAppStore((state) => state.setMissions);
+  const presentation = useAppStore((state) => state.characterPresentation);
+  const fitnessClass = getFitnessClass(presentation?.fitnessClass);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedMission, setSelectedMission] = useState<Mission | null>(null);
@@ -139,6 +142,16 @@ export default function MissionsScreen() {
             </Pressable>
           );
         })}
+      </View>
+
+      <View style={[styles.classRecommendation, { borderColor: fitnessClass.accent }]}>
+        <Ionicons name={fitnessClass.icon} size={15} color={fitnessClass.accent} />
+        <AppText variant="caption" style={{ color: fitnessClass.accent }}>
+          {fitnessClass.name} mission mix
+        </AppText>
+        <AppText variant="caption" muted style={{ flex: 1 }} numberOfLines={1}>
+          Suggestions stay open to every activity type.
+        </AppText>
       </View>
 
       <Card>
@@ -399,6 +412,16 @@ const styles = StyleSheet.create({
   },
   dayStrip: {
     flexDirection: 'row',
+    gap: spacing.xs
+  },
+  classRecommendation: {
+    minHeight: 36,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    backgroundColor: colors.cardHigh,
+    paddingHorizontal: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs
   },
   dayPill: {

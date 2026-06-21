@@ -15,12 +15,14 @@ export type CharacterPoseId =
   | 'recovery'
   | 'confident';
 export type EvolutionStageId = 'starter' | 'trainee' | 'athlete' | 'elite';
+export type FitnessClassId = 'runner' | 'lifter' | 'explorer' | 'hybrid_athlete';
 export type CosmeticAvailability = 'permanent' | 'featured' | 'seasonal' | 'earned';
 export type CosmeticUnlockSource =
   | { type: 'starter'; label: string }
   | { type: 'shop'; label: string }
   | { type: 'achievement'; id: string; label: string }
-  | { type: 'personal_record'; id: PersonalRecordType; label: string };
+  | { type: 'personal_record'; id: PersonalRecordType; label: string }
+  | { type: 'fitness_class'; id: FitnessClassId; label: string };
 
 export type CosmeticVisual = {
   thumbnailComponent: 'headwear' | 'top' | 'bottom' | 'footwear' | 'accessory' | 'frame' | 'aura';
@@ -128,7 +130,7 @@ export type OwnedCosmetic = {
   userId: string;
   itemId: string;
   acquiredAt: string;
-  acquisitionSource: 'shop' | 'achievement' | 'personal_record' | 'starter';
+  acquisitionSource: 'shop' | 'achievement' | 'personal_record' | 'fitness_class' | 'starter';
   sourceRef?: string | null;
 };
 
@@ -136,6 +138,7 @@ export type CharacterPresentation = {
   userId: string;
   equippedPose: CharacterPoseId;
   highestEvolutionStage: EvolutionStageId;
+  fitnessClass: FitnessClassId;
   updatedAt: string;
 };
 
@@ -460,19 +463,19 @@ export type Database = {
           user_id: string;
           item_id: string;
           acquired_at: string;
-          acquisition_source: 'shop' | 'achievement' | 'personal_record' | 'starter';
+          acquisition_source: 'shop' | 'achievement' | 'personal_record' | 'fitness_class' | 'starter';
           source_ref: string | null;
         };
         Insert: {
           user_id: string;
           item_id: string;
           acquired_at?: string;
-          acquisition_source?: 'shop' | 'achievement' | 'personal_record' | 'starter';
+          acquisition_source?: 'shop' | 'achievement' | 'personal_record' | 'fitness_class' | 'starter';
           source_ref?: string | null;
         };
         Update: {
           item_id?: string;
-          acquisition_source?: 'shop' | 'achievement' | 'personal_record' | 'starter';
+          acquisition_source?: 'shop' | 'achievement' | 'personal_record' | 'fitness_class' | 'starter';
           source_ref?: string | null;
         };
         Relationships: [];
@@ -515,16 +518,19 @@ export type Database = {
           user_id: string;
           equipped_pose: CharacterPoseId;
           highest_evolution_stage: EvolutionStageId;
+          fitness_class: FitnessClassId;
           updated_at: string;
         };
         Insert: {
           user_id: string;
           equipped_pose?: CharacterPoseId;
           highest_evolution_stage?: EvolutionStageId;
+          fitness_class?: FitnessClassId;
         };
         Update: {
           equipped_pose?: CharacterPoseId;
           highest_evolution_stage?: EvolutionStageId;
+          fitness_class?: FitnessClassId;
         };
         Relationships: [];
       };
@@ -627,7 +633,7 @@ export type Database = {
       cosmetic_unlock_catalog: {
         Row: {
           item_id: string;
-          source_type: 'achievement' | 'personal_record';
+          source_type: 'achievement' | 'personal_record' | 'fitness_class';
           source_id: string;
           requirement_label: string;
         };
@@ -676,6 +682,10 @@ export type Database = {
       };
       set_character_pose: {
         Args: { p_pose: CharacterPoseId };
+        Returns: Database['public']['Tables']['character_presentations']['Row'];
+      };
+      set_fitness_class: {
+        Args: { p_class: FitnessClassId };
         Returns: Database['public']['Tables']['character_presentations']['Row'];
       };
     };

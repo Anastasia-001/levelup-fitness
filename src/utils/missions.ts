@@ -3,6 +3,7 @@ import {
   Activity,
   Mission,
   MissionDifficulty,
+  FitnessClassId,
   MissionTemplate,
   MissionType
 } from '@/types/domain';
@@ -12,6 +13,7 @@ export type MissionGenerationContext = {
   userLevel: number;
   recentActivities: Activity[];
   missionDate?: string;
+  fitnessClass?: FitnessClassId;
 };
 
 const REWARD_RANGES: Record<
@@ -40,13 +42,31 @@ export const generateDailyMissionTemplates = (context: MissionGenerationContext)
       (mission) => mission.difficulty === difficulty && !usedTypes.has(mission.type)
     );
     const fallback = pool.filter((mission) => !usedTypes.has(mission.type));
-    const options = candidates.length ? candidates : fallback;
-    const mission = options[(seed + index * 3) % options.length];
+    const options = prioritizeForClass(candidates.length ? candidates : fallback, context.fitnessClass);
+    const preferredWindow = context.fitnessClass && context.fitnessClass !== 'hybrid_athlete'
+      ? Math.min(2, options.length)
+      : options.length;
+    const mission = options[(seed + index * 3) % preferredWindow];
     selected.push(mission);
     usedTypes.add(mission.type);
   });
 
   return selected;
+};
+
+const CLASS_MISSION_PREFERENCES: Record<FitnessClassId, MissionType[]> = {
+  runner: ['distance_walk_run', 'workout_duration', 'complete_activity'],
+  lifter: ['pushups', 'workout_duration', 'complete_activity'],
+  explorer: ['distance_walk_run', 'complete_activity', 'workout_duration'],
+  hybrid_athlete: ['complete_activity', 'distance_walk_run', 'pushups', 'workout_duration']
+};
+
+const prioritizeForClass = (missions: MissionTemplate[], fitnessClass?: FitnessClassId) => {
+  if (!fitnessClass || fitnessClass === 'hybrid_athlete') return missions;
+  const preferences = CLASS_MISSION_PREFERENCES[fitnessClass];
+  return [...missions].sort(
+    (left, right) => preferences.indexOf(left.type) - preferences.indexOf(right.type)
+  );
 };
 
 export const buildDailyMissions = (

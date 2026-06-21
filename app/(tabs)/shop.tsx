@@ -30,6 +30,7 @@ export default function ShopScreen() {
   const achievements = useAppStore((state) => state.achievements);
   const personalRecords = useAppStore((state) => state.personalRecords);
   const streaks = useAppStore((state) => state.progressionStreaks);
+  const presentation = useAppStore((state) => state.characterPresentation);
   const ownedCosmetics = useAppStore((state) => state.ownedCosmetics);
   const equippedCosmetics = useAppStore((state) => state.equippedCosmetics);
   const setCharacter = useAppStore((state) => state.setCharacter);
@@ -45,8 +46,15 @@ export default function ShopScreen() {
   const level = character?.level ?? 1;
   const rotation = useMemo(() => getShopRotation(clock), [clock]);
   const progressContext = useMemo(
-    () => ({ activities, achievements, personalRecords, streaks, characterLevel: level }),
-    [achievements, activities, level, personalRecords, streaks]
+    () => ({
+      activities,
+      achievements,
+      personalRecords,
+      streaks,
+      characterLevel: level,
+      fitnessClass: presentation?.fitnessClass
+    }),
+    [achievements, activities, level, personalRecords, presentation?.fitnessClass, streaks]
   );
 
   const sections = useMemo<ShopSection[]>(() => {

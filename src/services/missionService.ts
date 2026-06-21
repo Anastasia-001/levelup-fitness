@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { mapActivity, mapMission } from '@/services/mappers';
+import { syncCharacterPresentation } from '@/services/characterPresentationService';
 import { getCharacter } from '@/services/profileService';
 import { Mission } from '@/types/domain';
 import {
@@ -100,8 +101,9 @@ const getMissionGenerationContext = async (
 ): Promise<MissionGenerationContext> => {
   const since = new Date();
   since.setDate(since.getDate() - 28);
-  const [character, activityResult] = await Promise.all([
+  const [character, presentation, activityResult] = await Promise.all([
     getCharacter(userId),
+    syncCharacterPresentation(),
     supabase
       .from('activities')
       .select('*')
@@ -113,6 +115,7 @@ const getMissionGenerationContext = async (
   if (activityResult.error) throw activityResult.error;
   return {
     userLevel: character.level,
+    fitnessClass: presentation.fitnessClass,
     recentActivities: activityResult.data.map(mapActivity),
     missionDate
   };

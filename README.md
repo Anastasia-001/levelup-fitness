@@ -70,6 +70,12 @@ Character poses and evolution stages require:
 supabase/migrations/202606210001_character_poses_evolution.sql
 ```
 
+Stat titles are client-side. Fitness class persistence and class-earned cosmetics require:
+
+```text
+supabase/migrations/202606210002_fitness_classes.sql
+```
+
 ## Run Locally
 
 Start Expo:
