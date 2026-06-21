@@ -28,14 +28,28 @@ export default function MeScreen() {
   const achievements = useAppStore((state) => state.achievements);
   const personalRecords = useAppStore((state) => state.personalRecords);
   const presentation = useAppStore((state) => state.characterPresentation);
+  const setCharacterPresentation = useAppStore((state) => state.setCharacterPresentation);
+  const addOwnedCosmetic = useAppStore((state) => state.addOwnedCosmetic);
   const fitnessClass = getFitnessClass(presentation?.fitnessClass);
   const units = profile?.unitPreference ?? 'metric';
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [achievementsVisible, setAchievementsVisible] = useState(false);
+  const [classPickerVisible, setClassPickerVisible] = useState(false);
   const totalDistance = activities.reduce((sum, activity) => sum + (activity.distanceMeters ?? 0), 0);
   const totalDuration = activities.reduce((sum, activity) => sum + activity.durationSeconds, 0);
   const totalExp = activities.reduce((sum, activity) => sum + activity.expEarned, 0);
   const weekly = useMemo(() => buildWeeklyBars(activities), [activities]);
+
+  const chooseFitnessClass = async (nextClass: Parameters<typeof setFitnessClass>[0]) => {
+    try {
+      setCharacterPresentation(await setFitnessClass(nextClass));
+      const unlocked = await syncEarnedCosmetics();
+      unlocked.forEach(addOwnedCosmetic);
+    } catch (caught) {
+      Alert.alert('Could not change class', caught instanceof Error ? caught.message : 'Try again.');
+      throw caught;
+    }
+  };
 
   return (
     <Screen>
@@ -150,7 +164,21 @@ export default function MeScreen() {
       </View>
       <ActivityHistoryList activities={activities} units={units} />
 
-      <SettingsModal visible={settingsVisible} onClose={() => setSettingsVisible(false)} />
+      <SettingsModal
+        visible={settingsVisible}
+        onClose={() => setSettingsVisible(false)}
+        onOpenFitnessClass={() => {
+          setSettingsVisible(false);
+          setClassPickerVisible(true);
+        }}
+      />
+      <FitnessClassPicker
+        visible={classPickerVisible}
+        current={presentation?.fitnessClass ?? 'hybrid_athlete'}
+        activities={activities}
+        onClose={() => setClassPickerVisible(false)}
+        onSelect={chooseFitnessClass}
+      />
       <AchievementsModal
         visible={achievementsVisible}
         unlockedAchievements={achievements}
@@ -281,17 +309,21 @@ const AchievementsModal = ({
   );
 };
 
-const SettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () => void }) => {
+const SettingsModal = ({
+  visible,
+  onClose,
+  onOpenFitnessClass
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onOpenFitnessClass: () => void;
+}) => {
   const profile = useAppStore((state) => state.profile);
   const setProfile = useAppStore((state) => state.setProfile);
   const reset = useAppStore((state) => state.reset);
-  const activities = useAppStore((state) => state.activities);
   const presentation = useAppStore((state) => state.characterPresentation);
-  const setCharacterPresentation = useAppStore((state) => state.setCharacterPresentation);
-  const addOwnedCosmetic = useAppStore((state) => state.addOwnedCosmetic);
   const [draft, setDraft] = useState<Profile | null>(profile);
   const [email, setEmail] = useState('');
-  const [classPickerVisible, setClassPickerVisible] = useState(false);
   const fitnessClass = getFitnessClass(presentation?.fitnessClass);
 
   useEffect(() => {
@@ -339,17 +371,6 @@ const SettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
     setEmail('');
   };
 
-  const chooseFitnessClass = async (nextClass: Parameters<typeof setFitnessClass>[0]) => {
-    try {
-      setCharacterPresentation(await setFitnessClass(nextClass));
-      const unlocked = await syncEarnedCosmetics();
-      unlocked.forEach(addOwnedCosmetic);
-    } catch (caught) {
-      Alert.alert('Could not change class', caught instanceof Error ? caught.message : 'Try again.');
-      throw caught;
-    }
-  };
-
   if (!draft) return null;
 
   return (
@@ -383,7 +404,7 @@ const SettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
               value={draft.unitPreference}
               onChange={(unitPreference) => setDraft({ ...draft, unitPreference })}
             />
-            <Pressable onPress={() => setClassPickerVisible(true)} style={styles.classSetting}>
+            <Pressable onPress={onOpenFitnessClass} style={styles.classSetting}>
               <View style={[styles.classSettingIcon, { borderColor: fitnessClass.accent }]}>
                 <Ionicons name={fitnessClass.icon} size={20} color={fitnessClass.accent} />
               </View>
@@ -401,13 +422,6 @@ const SettingsModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
             <PrimaryButton label="Log out" variant="secondary" onPress={logout} />
             <PrimaryButton label="Delete account" variant="danger" onPress={() => Alert.alert('Delete account', 'Account deletion flow placeholder.')} />
           </ScrollView>
-          <FitnessClassPicker
-            visible={classPickerVisible}
-            current={presentation?.fitnessClass ?? 'hybrid_athlete'}
-            activities={activities}
-            onClose={() => setClassPickerVisible(false)}
-            onSelect={chooseFitnessClass}
-          />
         </View>
       </View>
     </Modal>

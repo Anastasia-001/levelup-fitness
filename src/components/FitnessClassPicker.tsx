@@ -25,6 +25,8 @@ export const FitnessClassPicker = ({ visible, current, activities, onClose, onSe
     try {
       await onSelect(fitnessClass);
       onClose();
+    } catch {
+      // The owning screen reports the service error and keeps the picker open.
     } finally {
       setSaving(null);
     }
