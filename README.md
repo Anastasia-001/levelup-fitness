@@ -64,6 +64,12 @@ supabase/migrations/202606200004_cosmetic_catalog_rotation_unlocks.sql
 
 This migration preserves current inventory, adds the Aura equipment slot, and idempotently grants eligible achievement and personal-record cosmetics.
 
+Character poses and evolution stages require:
+
+```text
+supabase/migrations/202606210001_character_poses_evolution.sql
+```
+
 ## Run Locally
 
 Start Expo:

@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppText } from '@/components/AppText';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { COSMETICS } from '@/constants/cosmetics';
+import { getEvolutionStageForLevel } from '@/constants/characterProgression';
 import { colors, radii, shadows, spacing } from '@/constants/theme';
 import { LevelUpCelebration as LevelUpCelebrationModel } from '@/types/domain';
 
@@ -37,6 +38,12 @@ export const LevelUpCelebration = ({
   const progress = useRef(new Animated.Value(0)).current;
   const celebrationLevel = celebration?.level;
   const celebrationPreviousLevel = celebration?.previousLevel;
+  const evolutionStage = useMemo(() => {
+    if (!celebration) return null;
+    const previous = getEvolutionStageForLevel(celebration.previousLevel);
+    const next = getEvolutionStageForLevel(celebration.level);
+    return previous.id === next.id ? null : next;
+  }, [celebration]);
   const unlocks = useMemo(() => {
     if (!celebration) return additionalUnlocks;
     const levelUnlocks = COSMETICS.filter((item) =>
@@ -48,8 +55,9 @@ export const LevelUpCelebration = ({
         ? `Cosmetic earned: ${item.name}`
         : `Shop item available: ${item.name}`
     );
-    return [...new Set([...additionalUnlocks, ...levelUnlocks])];
-  }, [additionalUnlocks, celebration]);
+    const stageUnlocks = evolutionStage ? [`Evolution stage: ${evolutionStage.name}`] : [];
+    return [...new Set([...additionalUnlocks, ...stageUnlocks, ...levelUnlocks])];
+  }, [additionalUnlocks, celebration, evolutionStage]);
 
   useEffect(() => {
     if (!visible || celebrationLevel === undefined) return;
@@ -121,6 +129,13 @@ export const LevelUpCelebration = ({
               <Ionicons name="arrow-forward" size={28} color={colors.primary} />
               <AppText style={[styles.levelNumber, styles.newLevel]}>{celebration.level}</AppText>
             </View>
+
+            {evolutionStage && (
+              <View style={[styles.evolutionStage, { borderColor: evolutionStage.sceneColor }]}>
+                <AppText variant="caption" style={{ color: evolutionStage.sceneColor }}>NEW EVOLUTION</AppText>
+                <AppText variant="subtitle">{evolutionStage.name}</AppText>
+              </View>
+            )}
 
             <View style={styles.progressTrack}>
               <Animated.View style={[styles.progressFill, { width: progressWidth }]} />
@@ -250,6 +265,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderDim,
     backgroundColor: colors.black
+  },
+  evolutionStage: {
+    width: '100%',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    backgroundColor: colors.cardHigh,
+    padding: spacing.sm
   },
   progressFill: {
     height: '100%',

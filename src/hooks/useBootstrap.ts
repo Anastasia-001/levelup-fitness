@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { listActivities, processPendingActivityRewards } from '@/services/activityService';
 import { getInventory } from '@/services/cosmeticService';
+import { syncCharacterPresentation } from '@/services/characterPresentationService';
 import { listPendingLevelUps } from '@/services/levelUpService';
 import { getTodayMissions } from '@/services/missionService';
 import { getCharacter, getProfile } from '@/services/profileService';
@@ -12,6 +13,7 @@ export const useBootstrap = () => {
   const [error, setError] = useState<string | null>(null);
   const setProfile = useAppStore((state) => state.setProfile);
   const setCharacter = useAppStore((state) => state.setCharacter);
+  const setCharacterPresentation = useAppStore((state) => state.setCharacterPresentation);
   const setActivities = useAppStore((state) => state.setActivities);
   const setMissions = useAppStore((state) => state.setMissions);
   const setOwnedCosmetics = useAppStore((state) => state.setOwnedCosmetics);
@@ -48,6 +50,14 @@ export const useBootstrap = () => {
         setMissions(missions);
         setOwnedCosmetics(inventory.ownedCosmetics);
         setEquippedCosmetics(inventory.equippedCosmetics);
+
+        try {
+          setCharacterPresentation(await syncCharacterPresentation());
+        } catch (caught) {
+          if (__DEV__) {
+            console.warn('[LevelUp] Character presentation could not be loaded.', caught);
+          }
+        }
 
         try {
           setPendingLevelUps(await listPendingLevelUps(userId));
@@ -90,6 +100,7 @@ export const useBootstrap = () => {
       setAchievements,
       setActivities,
       setCharacter,
+      setCharacterPresentation,
       setEquippedCosmetics,
       setMissions,
       setOwnedCosmetics,

@@ -7,6 +7,14 @@ export type ActivityType = GpsActivityType | ManualActivityType;
 export type UnitPreference = 'metric' | 'imperial';
 export type CosmeticCategory = 'head' | 'shirt' | 'pants' | 'shoes' | 'accessory' | 'frame' | 'aura';
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
+export type CharacterPoseId =
+  | 'neutral'
+  | 'ready_to_run'
+  | 'stretch'
+  | 'post_workout_victory'
+  | 'recovery'
+  | 'confident';
+export type EvolutionStageId = 'starter' | 'trainee' | 'athlete' | 'elite';
 export type CosmeticAvailability = 'permanent' | 'featured' | 'seasonal' | 'earned';
 export type CosmeticUnlockSource =
   | { type: 'starter'; label: string }
@@ -122,6 +130,30 @@ export type OwnedCosmetic = {
   acquiredAt: string;
   acquisitionSource: 'shop' | 'achievement' | 'personal_record' | 'starter';
   sourceRef?: string | null;
+};
+
+export type CharacterPresentation = {
+  userId: string;
+  equippedPose: CharacterPoseId;
+  highestEvolutionStage: EvolutionStageId;
+  updatedAt: string;
+};
+
+export type CharacterPoseDefinition = {
+  id: CharacterPoseId;
+  name: string;
+  description: string;
+  unlockLabel: string;
+  icon: string;
+};
+
+export type EvolutionStageDefinition = {
+  id: EvolutionStageId;
+  name: string;
+  minimumLevel: number;
+  sceneColor: string;
+  trimColor: string;
+  postureScale: number;
 };
 
 export type EquippedCosmetics = {
@@ -478,6 +510,24 @@ export type Database = {
         };
         Relationships: [];
       };
+      character_presentations: {
+        Row: {
+          user_id: string;
+          equipped_pose: CharacterPoseId;
+          highest_evolution_stage: EvolutionStageId;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          equipped_pose?: CharacterPoseId;
+          highest_evolution_stage?: EvolutionStageId;
+        };
+        Update: {
+          equipped_pose?: CharacterPoseId;
+          highest_evolution_stage?: EvolutionStageId;
+        };
+        Relationships: [];
+      };
       progression_streaks: {
         Row: {
           user_id: string;
@@ -619,6 +669,14 @@ export type Database = {
       sync_earned_cosmetics: {
         Args: Record<string, never>;
         Returns: Database['public']['Tables']['owned_cosmetics']['Row'][];
+      };
+      sync_character_presentation: {
+        Args: Record<string, never>;
+        Returns: Database['public']['Tables']['character_presentations']['Row'];
+      };
+      set_character_pose: {
+        Args: { p_pose: CharacterPoseId };
+        Returns: Database['public']['Tables']['character_presentations']['Row'];
       };
     };
     Enums: {

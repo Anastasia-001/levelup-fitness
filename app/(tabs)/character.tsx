@@ -8,11 +8,22 @@ import { CosmeticThumbnail, RARITY_COLORS } from '@/components/CosmeticThumbnail
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { Screen } from '@/components/Screen';
 import { CATEGORY_LABELS, COSMETIC_CATEGORIES, visibleCosmeticsForCategory } from '@/constants/cosmetics';
+import { CHARACTER_POSES, getEvolutionStage } from '@/constants/characterProgression';
 import { colors, radii, shadows, spacing } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import { equipCosmetic } from '@/services/cosmeticService';
+import { setCharacterPose } from '@/services/characterPresentationService';
 import { useAppStore } from '@/store/appStore';
-import { CosmeticCategory, CosmeticItem } from '@/types/domain';
+import {
+  Activity,
+  CharacterPoseDefinition,
+  CharacterPoseId,
+  CosmeticCategory,
+  CosmeticItem,
+  Mission,
+  ProgressionStreaks,
+  UserAchievement
+} from '@/types/domain';
 import { levelFromTotalExp, statLevel } from '@/utils/exp';
 import { getCosmeticUnlockProgress } from '@/utils/cosmetics';
 
@@ -23,15 +34,19 @@ const statRows = [
   ['Consistency', 'consistencyExp', 'calendar-outline']
 ] as const;
 
+type WardrobeCategory = CosmeticCategory | 'poses';
+
 export default function CharacterScreen() {
   const character = useAppStore((state) => state.character);
   const profile = useAppStore((state) => state.profile);
   const equippedCosmetics = useAppStore((state) => state.equippedCosmetics);
+  const presentation = useAppStore((state) => state.characterPresentation);
   const progress = character ? levelFromTotalExp(character.totalExp) : null;
   const diamonds = 0;
   const [customizing, setCustomizing] = useState(false);
   const { height: screenHeight } = useWindowDimensions();
   const avatarHeight = Math.min(520, Math.max(340, screenHeight - 320));
+  const evolution = getEvolutionStage(presentation?.highestEvolutionStage);
 
   return (
     <Screen scroll={false}>
@@ -71,9 +86,17 @@ export default function CharacterScreen() {
           onPress={() => setCustomizing(true)}
           style={({ pressed }) => [styles.characterStage, pressed && styles.characterPressed]}
         >
-          <AvatarPreview equipment={equippedCosmetics} height={avatarHeight} />
+          <AvatarPreview
+            equipment={equippedCosmetics}
+            height={avatarHeight}
+            pose={presentation?.equippedPose}
+            evolutionStage={presentation?.highestEvolutionStage}
+          />
           <View style={styles.levelBadge}>
             <AppText style={styles.levelBadgeText}>LV {character?.level ?? 1}</AppText>
+          </View>
+          <View style={[styles.evolutionBadge, { borderColor: evolution.sceneColor }]}>
+            <AppText variant="caption" style={{ color: evolution.sceneColor }}>{evolution.name}</AppText>
           </View>
         </Pressable>
         <Pressable onPress={() => setCustomizing(true)} style={({ pressed }) => [styles.wardrobeButton, pressed && styles.pressed]}>
@@ -114,12 +137,16 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
   const achievements = useAppStore((state) => state.achievements);
   const personalRecords = useAppStore((state) => state.personalRecords);
   const streaks = useAppStore((state) => state.progressionStreaks);
+  const missions = useAppStore((state) => state.missions);
   const ownedCosmetics = useAppStore((state) => state.ownedCosmetics);
   const equippedCosmetics = useAppStore((state) => state.equippedCosmetics);
+  const presentation = useAppStore((state) => state.characterPresentation);
   const setEquippedCosmetics = useAppStore((state) => state.setEquippedCosmetics);
+  const setCharacterPresentation = useAppStore((state) => state.setCharacterPresentation);
   const [userId, setUserId] = useState<string | null>(null);
-  const [category, setCategory] = useState<CosmeticCategory>('head');
+  const [category, setCategory] = useState<WardrobeCategory>('head');
   const [equippingId, setEquippingId] = useState<string | null>(null);
+  const [poseSavingId, setPoseSavingId] = useState<string | null>(null);
   const ownedIds = useMemo(() => new Set(ownedCosmetics.map((item) => item.itemId)), [ownedCosmetics]);
   const progressContext = useMemo(
     () => ({
@@ -136,9 +163,9 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
     supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
   }, []);
 
-  const currentEquipped = getEquippedId(equippedCosmetics, category);
+  const currentEquipped = category === 'poses' ? null : getEquippedId(equippedCosmetics, category);
   const items = useMemo(
-    () => [...visibleCosmeticsForCategory(category)].sort((left, right) =>
+    () => category === 'poses' ? [] : [...visibleCosmeticsForCategory(category)].sort((left, right) =>
       wardrobeRank(left, currentEquipped, ownedIds) - wardrobeRank(right, currentEquipped, ownedIds)
     ),
     [category, currentEquipped, ownedIds]
@@ -156,6 +183,18 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
       Alert.alert('Could not equip item', caught instanceof Error ? caught.message : 'Try again.');
     } finally {
       setEquippingId(null);
+    }
+  };
+
+  const selectPose = async (pose: CharacterPoseDefinition) => {
+    if (!isPoseUnlocked(pose.id, { activities, achievements, missions, streaks, level: character?.level ?? 1 })) return;
+    setPoseSavingId(pose.id);
+    try {
+      setCharacterPresentation(await setCharacterPose(pose.id));
+    } catch (caught) {
+      Alert.alert('Could not select pose', caught instanceof Error ? caught.message : 'Try again.');
+    } finally {
+      setPoseSavingId(null);
     }
   };
 
@@ -180,7 +219,12 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
             style={styles.modalPreview}
           >
             <View style={styles.previewFloor} />
-            <AvatarPreview equipment={equippedCosmetics} size="wardrobe" />
+            <AvatarPreview
+              equipment={equippedCosmetics}
+              size="wardrobe"
+              pose={presentation?.equippedPose}
+              evolutionStage={presentation?.highestEvolutionStage}
+            />
           </LinearGradient>
 
           <ScrollView
@@ -189,21 +233,56 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
             contentContainerStyle={styles.categoryStrip}
             style={styles.categoryScroller}
           >
-            {COSMETIC_CATEGORIES.map((nextCategory) => (
+            {[...COSMETIC_CATEGORIES, 'poses' as const].map((nextCategory) => (
               <Pressable
                 key={nextCategory}
                 onPress={() => setCategory(nextCategory)}
                 style={[styles.categoryPill, category === nextCategory && styles.categoryPillActive]}
               >
                 <AppText style={category === nextCategory && styles.categoryPillText}>
-                  {CATEGORY_LABELS[nextCategory]}
+                  {nextCategory === 'poses' ? 'Poses' : CATEGORY_LABELS[nextCategory]}
                 </AppText>
               </Pressable>
             ))}
           </ScrollView>
 
           <ScrollView contentContainerStyle={styles.itemList} showsVerticalScrollIndicator={false}>
-            {items.map((item) => {
+            {category === 'poses' ? CHARACTER_POSES.map((pose) => {
+              const selected = presentation?.equippedPose === pose.id;
+              const unlocked = isPoseUnlocked(pose.id, {
+                activities,
+                achievements,
+                missions,
+                streaks,
+                level: character?.level ?? 1
+              });
+              return (
+                <View key={`pose-${pose.id}`} style={[styles.poseRow, selected && styles.poseRowSelected]}>
+                  <View style={styles.poseThumbnail}>
+                    <AvatarPreview
+                      equipment={equippedCosmetics}
+                      height={132}
+                      pose={pose.id}
+                      evolutionStage={presentation?.highestEvolutionStage}
+                    />
+                  </View>
+                  <View style={{ flex: 1, gap: 3 }}>
+                    <AppText variant="subtitle">{pose.name}</AppText>
+                    <AppText variant="caption" muted numberOfLines={2}>{pose.description}</AppText>
+                    <AppText variant="caption" style={{ color: unlocked ? colors.success : colors.warning }}>
+                      {selected ? 'Selected' : unlocked ? 'Unlocked' : pose.unlockLabel}
+                    </AppText>
+                  </View>
+                  <PrimaryButton
+                    label={selected ? 'Selected' : poseSavingId === pose.id ? 'Saving...' : unlocked ? 'Select' : 'Locked'}
+                    onPress={() => selectPose(pose)}
+                    disabled={!unlocked || selected || poseSavingId === pose.id}
+                    variant={unlocked && !selected ? 'primary' : 'secondary'}
+                    style={styles.equipButton}
+                  />
+                </View>
+              );
+            }) : items.map((item) => {
               const owned = canUseItem(item);
               const equipped = currentEquipped === item.id;
               const levelLocked = (character?.level ?? 1) < (item.unlockLevel ?? 1);
@@ -288,6 +367,29 @@ const wardrobeRank = (item: CosmeticItem, equippedId: string | null, ownedIds: S
   if (item.id === equippedId) return 0;
   if (item.unlockSource.type === 'starter' || ownedIds.has(item.id)) return 1;
   return 2;
+};
+
+const isPoseUnlocked = (
+  pose: CharacterPoseId,
+  context: {
+    activities: Activity[];
+    achievements: UserAchievement[];
+    missions: Mission[];
+    streaks: ProgressionStreaks | null;
+    level: number;
+  }
+) => {
+  if (pose === 'neutral') return true;
+  if (pose === 'ready_to_run') {
+    return context.achievements.some((achievement) => achievement.achievementId === 'first_gps_activity') ||
+      context.activities.some((activity) => ['run', 'walk', 'bike', 'hike'].includes(activity.type));
+  }
+  if (pose === 'stretch') {
+    return context.missions.some((mission) => mission.completedAt && mission.templateId.includes('recovery'));
+  }
+  if (pose === 'post_workout_victory') return context.level >= 5;
+  if (pose === 'recovery') return (context.streaks?.longestActivityDayStreak ?? 0) >= 7;
+  return context.level >= 10;
 };
 
 const styles = StyleSheet.create({
@@ -443,6 +545,17 @@ const styles = StyleSheet.create({
     color: colors.black,
     fontWeight: '900'
   },
+  evolutionBadge: {
+    position: 'absolute',
+    left: '17%',
+    bottom: '11%',
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    backgroundColor: 'rgba(3, 7, 19, 0.88)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    zIndex: 10
+  },
   statsGrid: {
     flexDirection: 'row',
     gap: spacing.xs,
@@ -566,6 +679,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm
+  },
+  poseRow: {
+    minHeight: 150,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.borderDim,
+    backgroundColor: colors.cardHigh,
+    padding: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm
+  },
+  poseRowSelected: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft
+  },
+  poseThumbnail: {
+    width: 82,
+    height: 132,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden'
   },
   wardrobeProgressRow: {
     gap: spacing.xs,

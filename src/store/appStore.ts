@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import {
   Activity,
   Character,
+  CharacterPresentation,
   EquippedCosmetics,
   LevelUpCelebration,
   Mission,
@@ -15,6 +16,7 @@ import {
 type AppState = {
   profile: Profile | null;
   character: Character | null;
+  characterPresentation: CharacterPresentation | null;
   activities: Activity[];
   missions: Mission[];
   ownedCosmetics: OwnedCosmetic[];
@@ -25,6 +27,7 @@ type AppState = {
   pendingLevelUps: LevelUpCelebration[];
   setProfile: (profile: Profile | null) => void;
   setCharacter: (character: Character | null) => void;
+  setCharacterPresentation: (presentation: CharacterPresentation | null) => void;
   setActivities: (activities: Activity[]) => void;
   setMissions: (missions: Mission[]) => void;
   setOwnedCosmetics: (ownedCosmetics: OwnedCosmetic[]) => void;
@@ -43,6 +46,7 @@ type AppState = {
 export const useAppStore = create<AppState>((set) => ({
   profile: null,
   character: null,
+  characterPresentation: null,
   activities: [],
   missions: [],
   ownedCosmetics: [],
@@ -53,6 +57,7 @@ export const useAppStore = create<AppState>((set) => ({
   pendingLevelUps: [],
   setProfile: (profile) => set({ profile }),
   setCharacter: (character) => set({ character }),
+  setCharacterPresentation: (characterPresentation) => set({ characterPresentation }),
   setActivities: (activities) => set({ activities }),
   setMissions: (missions) => set({ missions }),
   setOwnedCosmetics: (ownedCosmetics) => set({ ownedCosmetics }),
@@ -79,6 +84,7 @@ export const useAppStore = create<AppState>((set) => ({
     set({
       profile: null,
       character: null,
+      characterPresentation: null,
       activities: [],
       missions: [],
       ownedCosmetics: [],
