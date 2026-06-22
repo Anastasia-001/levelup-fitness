@@ -484,8 +484,17 @@ const SummaryTile = ({ label, value }: { label: string; value: string }) => (
 
 const SettingsSwitch = ({ label, value, onChange }: { label: string; value: boolean; onChange: (value: boolean) => void }) => (
   <View style={styles.settingRow}>
-    <AppText>{label}</AppText>
-    <Switch value={value} onValueChange={onChange} trackColor={{ true: colors.primaryDim, false: colors.borderDim }} thumbColor={value ? colors.primary : colors.muted} />
+    <AppText style={styles.settingLabel}>{label}</AppText>
+    <View style={styles.settingToggleSlot}>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ true: colors.primaryDim, false: colors.borderDim }}
+        thumbColor={value ? colors.primary : colors.muted}
+        ios_backgroundColor={colors.borderDim}
+        hitSlop={8}
+      />
+    </View>
   </View>
 );
 
@@ -784,15 +793,28 @@ const styles = StyleSheet.create({
     minWidth: 88
   },
   settingRow: {
-    minHeight: 56,
+    minHeight: 60,
     borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.borderDim,
     backgroundColor: colors.cardHigh,
-    paddingHorizontal: spacing.md,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between'
+    justifyContent: 'space-between',
+    gap: spacing.md
+  },
+  settingLabel: {
+    flex: 1,
+    lineHeight: 22
+  },
+  settingToggleSlot: {
+    width: 60,
+    height: 48,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   settingBlock: {
     gap: spacing.sm
