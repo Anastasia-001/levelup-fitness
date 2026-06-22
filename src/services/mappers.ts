@@ -61,6 +61,7 @@ export const mapCharacter = (row: {
 export const mapActivity = (row: {
   id: string;
   user_id: string;
+  client_session_id?: string | null;
   type: Activity['type'];
   title: string | null;
   started_at: string;
@@ -83,6 +84,7 @@ export const mapActivity = (row: {
 }): Activity => ({
   id: row.id,
   userId: row.user_id,
+  clientSessionId: row.client_session_id ?? undefined,
   type: row.type,
   title: row.title ?? fallbackActivityTitle(row.type),
   startedAt: row.started_at,

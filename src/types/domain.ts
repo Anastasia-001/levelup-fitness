@@ -45,6 +45,7 @@ export type RoutePoint = {
 
 export type ActivityInput = {
   type: ActivityType;
+  clientSessionId?: string;
   title?: string;
   startedAt?: string;
   completedAt?: string;
@@ -369,6 +370,7 @@ export type Database = {
         Row: {
           id: string;
           user_id: string;
+          client_session_id: string | null;
           type: ActivityType;
           title: string;
           started_at: string;
@@ -391,6 +393,7 @@ export type Database = {
         };
         Insert: {
           user_id: string;
+          client_session_id?: string | null;
           type: ActivityType;
           title: string;
           started_at: string;
@@ -412,6 +415,7 @@ export type Database = {
           stat_exp: Record<StatKey, number>;
         };
         Update: {
+          client_session_id?: string | null;
           type?: ActivityType;
           title?: string;
           started_at?: string;

@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { fallbackActivityTitle, mapActivity, mapActivityRewardSummary, mapCharacter, mapMission } from '@/services/mappers';
+import { fallbackActivityTitle, mapActivity, mapActivityRewardSummary, mapMission } from '@/services/mappers';
 import { getCharacter } from '@/services/profileService';
 import {
   Activity,
@@ -9,13 +9,12 @@ import {
   Character,
   Database,
   Mission,
-  RoutePoint,
-  StatKey
+  RoutePoint
 } from '@/types/domain';
-import { applyExpToCharacter, calculateActivityExp, levelFromTotalExp } from '@/utils/exp';
-import { progressMissionWithActivity } from '@/utils/missions';
+import { calculateActivityExp } from '@/utils/exp';
 import { todayKey } from '@/utils/format';
 import { localDateKey, localWeekStartKey } from '@/utils/progression';
+import { validateActivityInput } from '@/utils/manualWorkout';
 
 type PickedActivityPhoto = {
   uri: string;
@@ -43,28 +42,9 @@ const ACTIVITY_SCHEMA_DRIFT_COLUMNS = [
   'route',
   'local_date',
   'local_week_start',
-  'personal_record_ids'
+  'personal_record_ids',
+  'client_session_id'
 ] as const satisfies readonly (keyof ActivityInsert)[];
-
-const persistCharacter = async (character: Character) => {
-  const { data, error } = await supabase
-    .from('characters')
-    .update({
-      level: character.level,
-      total_exp: character.totalExp,
-      coins: character.coins,
-      endurance_exp: character.enduranceExp,
-      speed_exp: character.speedExp,
-      strength_exp: character.strengthExp,
-      consistency_exp: character.consistencyExp
-    })
-    .eq('id', character.id)
-    .select()
-    .single();
-
-  if (error) throw error;
-  return mapCharacter(data);
-};
 
 export const listActivities = async (userId: string) => {
   const { data, error } = await supabase
@@ -78,6 +58,7 @@ export const listActivities = async (userId: string) => {
 };
 
 export const saveActivity = async (userId: string, input: ActivityInput) => {
+  validateActivityInput(input);
   const { expEarned, statExp } = calculateActivityExp(input);
   const completedAt = input.completedAt ?? new Date().toISOString();
   const startedAt =
@@ -86,13 +67,14 @@ export const saveActivity = async (userId: string, input: ActivityInput) => {
   const localCompletedAt = new Date(completedAt);
   const payload: ActivityInsert = {
     user_id: userId,
+    client_session_id: input.clientSessionId ?? null,
     type: input.type,
     title: input.title?.trim() || fallbackActivityTitle(input.type),
     started_at: startedAt,
     completed_at: completedAt,
     local_date: input.localDate ?? localDateKey(localCompletedAt),
     local_week_start: input.localWeekStart ?? localWeekStartKey(localCompletedAt),
-    duration_seconds: Math.max(1, Math.round(input.durationSeconds)),
+    duration_seconds: input.durationSeconds,
     distance_meters: input.distanceMeters ?? null,
     route: normalizeRoute(input.route),
     sets: input.sets ?? null,
@@ -107,14 +89,12 @@ export const saveActivity = async (userId: string, input: ActivityInput) => {
 
   const data = await insertActivity(payload);
   const activity = mapActivity(data);
-  return processSavedActivityRewards(userId, activity, expEarned, statExp);
+  return processSavedActivityRewards(userId, activity);
 };
 
 const processSavedActivityRewards = async (
   userId: string,
-  activity: Activity,
-  expEarned: number,
-  statExp: Record<StatKey, number>
+  activity: Activity
 ): Promise<SaveActivityResult> => {
   const { data, error } = await supabase.rpc('process_activity_rewards', {
     p_activity_id: activity.id
@@ -122,7 +102,17 @@ const processSavedActivityRewards = async (
 
   if (error) {
     if (isMissingFunctionError(error, 'process_activity_rewards')) {
-      return applyActivitySideEffects(userId, activity, expEarned, statExp);
+      const message = 'Server reward validation is not installed. Run the latest Supabase migration before processing rewards.';
+      logActivitySaveError('missing-process-activity-rewards', { activity_id: activity.id, user_id: userId }, error);
+      return {
+        activity,
+        character: null,
+        missions: [],
+        expEarned: 0,
+        bonusExp: 0,
+        rewardSummary: null,
+        sideEffectError: message
+      };
     }
 
     logActivitySaveError('process-activity-rewards', { activity_id: activity.id, user_id: userId }, error);
@@ -172,7 +162,7 @@ const processSavedActivityRewards = async (
     activity: rewardedActivity,
     character,
     missions,
-    expEarned: rewardSummary?.characterExp ?? expEarned,
+    expEarned: rewardSummary?.characterExp ?? 0,
     bonusExp: rewardSummary?.missionBonusExp ?? 0,
     rewardSummary,
     sideEffectError
@@ -197,6 +187,25 @@ const insertActivity = async (payload: ActivityInsert) => {
       return data;
     }
 
+    if (nextPayload.client_session_id && isDuplicateKeyError(error)) {
+      const { data: existing, error: existingError } = await supabase
+        .from('activities')
+        .select('*')
+        .eq('user_id', nextPayload.user_id)
+        .eq('client_session_id', nextPayload.client_session_id)
+        .maybeSingle();
+      if (existingError) throw existingError;
+      if (existing) {
+        if (__DEV__) {
+          console.warn('[LevelUp] Reused existing activity for duplicate manual session', {
+            activityId: existing.id,
+            clientSessionId: nextPayload.client_session_id
+          });
+        }
+        return existing;
+      }
+    }
+
     logActivitySaveError(attempt === 0 ? 'insert-activity' : 'insert-activity-legacy-retry', nextPayload, error);
 
     const retryPayload = legacyCompatibleActivityPayload(nextPayload, error, removedColumns);
@@ -208,72 +217,6 @@ const insertActivity = async (payload: ActivityInsert) => {
   }
 
   throw new Error('Activity save failed after retrying schema-compatible payloads.');
-};
-
-const applyActivitySideEffects = async (
-  userId: string,
-  activity: Activity,
-  expEarned: number,
-  statExp: Record<StatKey, number>
-): Promise<SaveActivityResult> => {
-  let bonusExp = 0;
-  let missions: Mission[] = [];
-  let sideEffectError: string | undefined;
-
-  try {
-    const currentCharacter = await getCharacter(userId);
-    const afterActivity = applyExpToCharacter(currentCharacter, expEarned, statExp);
-
-    try {
-      const missionResult = await completeMatchingMissions(userId, activity);
-      missions = missionResult.missions;
-      bonusExp = missionResult.bonusExp;
-    } catch (caught) {
-      sideEffectError = errorMessage(caught);
-      logActivitySaveError('mission-side-effects', { activity_id: activity.id, user_id: userId }, caught);
-    }
-
-    const afterMissions = applyMissionBonus(afterActivity, bonusExp);
-    const character = await persistCharacter(afterMissions);
-    const rewardSummary = buildLegacyRewardSummary(
-      activity,
-      currentCharacter.level,
-      character.level,
-      bonusExp,
-      missions
-    );
-    return {
-      activity: {
-        ...activity,
-        rewardProcessedAt: rewardSummary.processedAt,
-        rewardSummary
-      },
-      character,
-      missions,
-      expEarned: expEarned + bonusExp,
-      bonusExp,
-      rewardSummary,
-      sideEffectError
-    };
-  } catch (caught) {
-    const message = errorMessage(caught);
-    logActivitySaveError('character-side-effects', {
-      activity_id: activity.id,
-      user_id: userId,
-      exp_earned: expEarned,
-      bonus_exp: bonusExp,
-      stat_exp: statExp
-    }, caught);
-    return {
-      activity,
-      character: null,
-      missions,
-      expEarned,
-      bonusExp,
-      rewardSummary: null,
-      sideEffectError: sideEffectError ?? message
-    };
-  }
 };
 
 const listMissionsForActivity = async (userId: string, activity: Activity) => {
@@ -288,38 +231,6 @@ const listMissionsForActivity = async (userId: string, activity: Activity) => {
   if (error) throw error;
   return data.map(mapMission);
 };
-
-const buildLegacyRewardSummary = (
-  activity: Activity,
-  levelBefore: number,
-  levelAfter: number,
-  bonusExp: number,
-  missions: Mission[]
-): ActivityRewardSummary => ({
-  characterExp: activity.expEarned + bonusExp,
-  activityExp: activity.expEarned,
-  missionBonusExp: bonusExp,
-  statExp: {
-    ...activity.statExp,
-    consistency: activity.statExp.consistency + Math.round(bonusExp * 0.35)
-  },
-  goldCoins: activity.expEarned + bonusExp,
-  missionGoldCoins: 0,
-  missionsCompleted: missions
-    .filter((mission) => Boolean(mission.completedAt))
-    .map((mission) => ({
-      id: mission.id,
-      title: mission.title,
-      rewardExp: mission.rewardExp,
-      rewardCoins: 0
-    })),
-  achievementsUnlocked: [],
-  personalRecords: [],
-  levelBefore,
-  levelAfter,
-  processedAt: new Date().toISOString(),
-  legacy: true
-});
 
 export const updateActivityTitle = async (activityId: string, title: string, fallbackActivity?: Activity) => {
   const { data, error } = await supabase
@@ -488,7 +399,10 @@ const legacyCompatibleActivityPayload = (
   removedColumns: Set<keyof ActivityInsert>
 ) => {
   const columnsToRemove = ACTIVITY_SCHEMA_DRIFT_COLUMNS.filter(
-    (column) => !removedColumns.has(column) && isMissingColumnError(error, [column])
+    (column) =>
+      !removedColumns.has(column) &&
+      isMissingColumnError(error, [column]) &&
+      !(column === 'client_session_id' && payload.client_session_id)
   );
 
   if (!columnsToRemove.length) return null;
@@ -520,6 +434,11 @@ const isMissingFunctionError = (error: unknown, functionName: string) => {
     errorText.includes(functionName.toLowerCase()) &&
     (errorText.includes('pgrst202') || errorText.includes('schema cache') || errorText.includes('function'))
   );
+};
+
+const isDuplicateKeyError = (error: unknown) => {
+  const serialized = serializeError(error);
+  return serialized.code === '23505' || /duplicate key|unique constraint/i.test(String(serialized.message));
 };
 
 const errorMessage = (error: unknown) => {
@@ -663,65 +582,4 @@ const extensionFromName = (value?: string | null) => {
   if (!extension || extension === value || extension.length > 5) return null;
   if (extension === 'jpeg') return 'jpg';
   return extension.replace(/[^a-z0-9]/g, '');
-};
-
-const applyMissionBonus = (character: Character, bonusExp: number): Character => {
-  if (bonusExp <= 0) {
-    return character;
-  }
-
-  const totalExp = character.totalExp + bonusExp;
-  return {
-    ...character,
-    level: levelFromTotalExp(totalExp).level,
-    totalExp,
-    coins: character.coins + bonusExp,
-    consistencyExp: character.consistencyExp + Math.round(bonusExp * 0.35),
-    updatedAt: new Date().toISOString()
-  };
-};
-
-const completeMatchingMissions = async (userId: string, activity: Activity) => {
-  const { data, error } = await supabase
-    .from('missions')
-    .select('*')
-    .eq('user_id', userId)
-    .eq('mission_date', todayKey());
-
-  if (error) throw error;
-
-  let bonusExp = 0;
-  const updatedMissions: Mission[] = [];
-
-  for (const row of data) {
-    const current = mapMission(row);
-    const updated = progressMissionWithActivity(current, activity);
-
-    if (
-      updated.progress !== current.progress ||
-      updated.completedAt !== current.completedAt
-    ) {
-      const completedNow = !current.completedAt && Boolean(updated.completedAt);
-      if (completedNow) {
-        bonusExp += updated.rewardExp;
-      }
-
-      const { data: saved, error: updateError } = await supabase
-        .from('missions')
-        .update({
-          progress: updated.progress,
-          completed_at: updated.completedAt ?? null
-        })
-        .eq('id', updated.id)
-        .select()
-        .single();
-
-      if (updateError) throw updateError;
-      updatedMissions.push(mapMission(saved));
-    } else {
-      updatedMissions.push(current);
-    }
-  }
-
-  return { missions: updatedMissions, bonusExp };
 };

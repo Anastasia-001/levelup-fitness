@@ -8,6 +8,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "test:manual": "node --test tests/manualWorkout.test.cjs",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint"
   },

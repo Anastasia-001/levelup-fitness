@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, AppState, Image, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ActivityRouteMap } from '@/components/ActivityRouteMap';
 import { AppText } from '@/components/AppText';
@@ -36,6 +36,11 @@ import {
 } from '@/services/gpsTracking';
 import { fallbackActivityTitle } from '@/services/mappers';
 import { listPendingLevelUps } from '@/services/levelUpService';
+import {
+  clearManualWorkoutSession,
+  loadManualWorkoutSession,
+  persistManualWorkoutSession
+} from '@/services/manualWorkoutSession';
 import { getTodayMissions } from '@/services/missionService';
 import { ensureProfileAndCharacter, getCharacter } from '@/services/profileService';
 import { rebuildPersonalRecords, refreshProgressionMilestones } from '@/services/progressionService';
@@ -44,12 +49,25 @@ import {
   Activity,
   ActivityType,
   LevelUpCelebration as LevelUpCelebrationModel,
+  ManualActivityType,
   PersonalRecord,
   RoutePoint
 } from '@/types/domain';
 import { formatDistance, formatDuration, formatPace, formatSpeed } from '@/utils/format';
 import { elevationGainMeters } from '@/utils/geo';
 import { PERSONAL_RECORD_LABELS } from '@/utils/progression';
+import {
+  MANUAL_WORKOUT_MAX_REPS,
+  MANUAL_WORKOUT_MAX_SETS,
+  MANUAL_WORKOUT_MAX_WEIGHT_KG,
+  ManualWorkoutSession,
+  createManualWorkoutSession,
+  durationSecondsFromMinutes,
+  elapsedManualWorkoutSeconds,
+  isStaleManualWorkoutSession,
+  parseManualNumber,
+  transitionManualWorkout
+} from '@/utils/manualWorkout';
 
 type RecordingState = 'idle' | 'recording' | 'paused';
 type GpsStatus = 'finding' | 'ready' | 'unavailable';
@@ -69,6 +87,9 @@ export default function RecordScreen() {
   const [sportModalVisible, setSportModalVisible] = useState(false);
   const [sportSearch, setSportSearch] = useState('');
   const [manualModalVisible, setManualModalVisible] = useState(false);
+  const [manualSession, setManualSession] = useState<ManualWorkoutSession | null>(null);
+  const [manualNowMs, setManualNowMs] = useState(() => Date.now());
+  const [manualValidationError, setManualValidationError] = useState<string | null>(null);
   const [recordingState, setRecordingState] = useState<RecordingState>('idle');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [distanceMeters, setDistanceMeters] = useState(0);
@@ -106,6 +127,9 @@ export default function RecordScreen() {
   const segmentIdRef = useRef(0);
   const backgroundTrackingAllowedRef = useRef(false);
   const forceNextSegmentRef = useRef(false);
+  const manualSessionRef = useRef<ManualWorkoutSession | null>(null);
+  const manualSaveInFlightRef = useRef(false);
+  const loadedManualSessionUserRef = useRef<string | null>(null);
   const appStateRef = useRef(AppState.currentState);
   const addActivity = useAppStore((state) => state.addActivity);
   const addOwnedCosmetic = useAppStore((state) => state.addOwnedCosmetic);
@@ -240,8 +264,86 @@ export default function RecordScreen() {
   }, [getCurrentLocationPoint]);
 
   useEffect(() => {
+    if (!userId || loadedManualSessionUserRef.current === userId) return;
+    loadedManualSessionUserRef.current = userId;
+
+    void loadManualWorkoutSession(userId).then((storedSession) => {
+      if (!storedSession || ['completed', 'cancelled'].includes(storedSession.phase)) {
+        if (storedSession) void clearManualWorkoutSession(userId);
+        return;
+      }
+
+      const recoverableSession = storedSession.phase === 'saving'
+        ? transitionManualWorkout(storedSession, { type: 'SAVE_FAILED' })
+        : storedSession.phase === 'finishing'
+          ? transitionManualWorkout(storedSession, { type: 'OPEN_DETAILS' })
+          : storedSession;
+      setSelectedType(recoverableSession.activityType);
+
+      if (isStaleManualWorkoutSession(recoverableSession)) {
+        Alert.alert(
+          'Review old workout',
+          'This manual workout has been active for more than 12 hours. It will not be saved or rewarded until you enter a valid duration.',
+          [
+            {
+              text: 'Discard session',
+              style: 'destructive',
+              onPress: () => {
+                void clearManualWorkoutSession(userId);
+                setManualSession(null);
+                setManualModalVisible(false);
+              }
+            },
+            {
+              text: 'Review duration',
+              onPress: () => {
+                const reviewSession = transitionManualWorkout(recoverableSession, { type: 'REVIEW_DURATION' });
+                setManualSession(reviewSession);
+                setDurationMinutes('');
+                setManualValidationError('Enter the workout duration before saving.');
+                setManualModalVisible(true);
+              }
+            }
+          ],
+          { cancelable: false }
+        );
+        return;
+      }
+
+      setManualSession(recoverableSession);
+      if (recoverableSession.finalDurationSeconds !== null) {
+        setDurationMinutes(formatDurationMinutes(recoverableSession.finalDurationSeconds));
+      }
+      setManualModalVisible(true);
+    });
+  }, [userId]);
+
+  useEffect(() => {
+    if (!manualSession) return;
+    if (manualSession.phase === 'completed' || manualSession.phase === 'cancelled') {
+      void clearManualWorkoutSession(manualSession.userId);
+      return;
+    }
+    void persistManualWorkoutSession(manualSession).catch((caught) => {
+      if (__DEV__) console.warn('[LevelUp] Could not persist manual workout session', caught);
+    });
+  }, [manualSession]);
+
+  useEffect(() => {
+    setManualNowMs(Date.now());
+    if (manualSession?.phase !== 'recording') return;
+
+    const timer = setInterval(() => setManualNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [manualSession?.phase, manualSession?.sessionId]);
+
+  useEffect(() => {
     recordingStateRef.current = recordingState;
   }, [recordingState]);
+
+  useEffect(() => {
+    manualSessionRef.current = manualSession;
+  }, [manualSession]);
 
   useEffect(() => {
     selectedTypeRef.current = selectedType;
@@ -267,6 +369,9 @@ export default function RecordScreen() {
       if (wasBackgrounded && nextState === 'active' && recordingStateRef.current !== 'idle') {
         setElapsedSeconds(calculateElapsedSeconds());
         void mergeQueuedBackgroundRoutePoints();
+      }
+      if (wasBackgrounded && nextState === 'active' && manualSessionRef.current) {
+        setManualNowMs(Date.now());
       }
     });
 
@@ -426,22 +531,142 @@ export default function RecordScreen() {
     await startLiveLocationWatch();
   };
 
-  const saveManualWorkout = async () => {
-    const saved = await saveWorkout({
-      type: selectedType,
-      durationSeconds: Math.max(1, Number(durationMinutes || 0)) * 60,
-      sets: sets ? Number(sets) : undefined,
-      reps: reps ? Number(reps) : undefined,
-      weightKg: weightKg ? Number(weightKg) : undefined
-    });
+  const openManualWorkout = () => {
+    setManualValidationError(null);
+    setManualModalVisible(true);
+  };
 
-    if (!saved) return;
+  const startManualWorkout = () => {
+    if (!userId || selectedIsGps) return;
+    const session = createManualWorkoutSession(userId, selectedType as ManualActivityType);
+    setManualSession(session);
+    setManualNowMs(session.startedAtMs);
+    setDurationMinutes('');
+    setManualValidationError(null);
+  };
 
+  const pauseManualWorkout = () => {
+    if (!manualSession) return;
+    const nowMs = Date.now();
+    setManualNowMs(nowMs);
+    setManualSession(transitionManualWorkout(manualSession, { type: 'PAUSE', nowMs }));
+  };
+
+  const resumeManualWorkout = () => {
+    if (!manualSession) return;
+    const nowMs = Date.now();
+    setManualNowMs(nowMs);
+    setManualSession(transitionManualWorkout(manualSession, { type: 'RESUME', nowMs }));
+  };
+
+  const finishManualWorkout = () => {
+    if (!manualSession) return;
+    const nowMs = Date.now();
+    const finishingSession = transitionManualWorkout(manualSession, { type: 'FINISH', nowMs });
+    const detailsSession = transitionManualWorkout(finishingSession, { type: 'OPEN_DETAILS' });
+    setManualNowMs(nowMs);
+    setManualSession(detailsSession);
+    setDurationMinutes(formatDurationMinutes(detailsSession.finalDurationSeconds ?? 0));
+    setManualValidationError(null);
+  };
+
+  const cancelManualWorkout = () => {
+    Keyboard.dismiss();
+    if (!manualSession || manualSession.phase === 'idle') {
+      setManualModalVisible(false);
+      return;
+    }
+
+    Alert.alert(
+      'Discard workout?',
+      'Your unsaved manual workout will be removed and its timer will stop.',
+      [
+        { text: 'Keep workout', style: 'cancel' },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => {
+            const cancelled = transitionManualWorkout(manualSession, { type: 'CANCEL' });
+            setManualSession(cancelled);
+            void clearManualWorkoutSession(cancelled.userId);
+            resetManualWorkoutForm();
+            setManualSession(null);
+            setManualModalVisible(false);
+          }
+        }
+      ]
+    );
+  };
+
+  const resetManualWorkoutForm = () => {
     setDurationMinutes('');
     setSets('');
     setReps('');
     setWeightKg('');
-    setManualModalVisible(false);
+    setManualValidationError(null);
+    manualSaveInFlightRef.current = false;
+  };
+
+  const saveManualWorkout = async () => {
+    if (!manualSession || manualSession.phase !== 'details' || manualSaveInFlightRef.current) return;
+
+    let activeSavingSession: ManualWorkoutSession | null = null;
+    try {
+      const durationSeconds = durationSecondsFromMinutes(durationMinutes);
+      const parsedSets = parseManualNumber(sets, 'Sets', { integer: true, max: MANUAL_WORKOUT_MAX_SETS });
+      const parsedReps = parseManualNumber(reps, 'Reps', { integer: true, max: MANUAL_WORKOUT_MAX_REPS });
+      const parsedWeight = parseManualNumber(weightKg, 'Weight', { max: MANUAL_WORKOUT_MAX_WEIGHT_KG });
+      const nowMs = Date.now();
+      const savingSession = transitionManualWorkout(manualSession, {
+        type: 'BEGIN_SAVE',
+        durationSeconds,
+        nowMs
+      });
+      activeSavingSession = savingSession;
+
+      manualSaveInFlightRef.current = true;
+      setManualValidationError(null);
+      setManualSession(savingSession);
+      await persistManualWorkoutSession(savingSession);
+
+      const completedAtMs = savingSession.completedAtMs ?? nowMs;
+      const saved = await saveWorkout({
+        type: savingSession.activityType,
+        durationSeconds,
+        sets: parsedSets,
+        reps: parsedReps,
+        weightKg: parsedWeight,
+        startedAt: new Date(completedAtMs - durationSeconds * 1000).toISOString(),
+        completedAt: new Date(completedAtMs).toISOString(),
+        clientSessionId: savingSession.sessionId
+      });
+
+      if (!saved) {
+        setManualSession(transitionManualWorkout(savingSession, { type: 'SAVE_FAILED' }));
+        return;
+      }
+
+      const completedSession = transitionManualWorkout(savingSession, { type: 'SAVE_SUCCEEDED' });
+      setManualSession(completedSession);
+      await clearManualWorkoutSession(completedSession.userId);
+      resetManualWorkoutForm();
+      setManualSession(null);
+      setManualModalVisible(false);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : 'Review the workout details and try again.';
+      if (__DEV__) {
+        console.warn('[LevelUp] Manual workout validation warning', {
+          sessionId: manualSession.sessionId,
+          message
+        });
+      }
+      setManualValidationError(message);
+      if (activeSavingSession) {
+        setManualSession(transitionManualWorkout(activeSavingSession, { type: 'SAVE_FAILED' }));
+      }
+    } finally {
+      manualSaveInFlightRef.current = false;
+    }
   };
 
   const refreshProgressionForActivity = async (activity: Activity) => {
@@ -842,7 +1067,7 @@ export default function RecordScreen() {
                 )}
               </>
             ) : (
-              <Pressable onPress={() => setManualModalVisible(true)} disabled={saving} style={({ pressed }) => [styles.startButton, pressed && styles.pressed]}>
+              <Pressable onPress={openManualWorkout} disabled={saving} style={({ pressed }) => [styles.startButton, pressed && styles.pressed]}>
                 <Ionicons name="add" size={30} color={colors.black} />
               </Pressable>
             )}
@@ -869,17 +1094,24 @@ export default function RecordScreen() {
       <ManualWorkoutModal
         visible={manualModalVisible}
         type={selectedType}
+        session={manualSession}
+        elapsedSeconds={manualSession ? elapsedManualWorkoutSeconds(manualSession, manualNowMs) : 0}
         durationMinutes={durationMinutes}
         sets={sets}
         reps={reps}
         weightKg={weightKg}
         saving={saving}
+        validationError={manualValidationError}
         onDuration={setDurationMinutes}
         onSets={setSets}
         onReps={setReps}
         onWeight={setWeightKg}
+        onStart={startManualWorkout}
+        onPause={pauseManualWorkout}
+        onResume={resumeManualWorkout}
+        onFinish={finishManualWorkout}
         onSave={saveManualWorkout}
-        onClose={() => setManualModalVisible(false)}
+        onClose={cancelManualWorkout}
       />
 
       <PostActivityModal
@@ -930,6 +1162,11 @@ const confirmBackgroundTracking = () =>
       ]
     );
   });
+
+const formatDurationMinutes = (durationSeconds: number) => {
+  const minutes = Math.max(0, durationSeconds) / 60;
+  return Number.isInteger(minutes) ? String(minutes) : minutes.toFixed(1);
+};
 
 const activitySaveErrorMessage = (caught: unknown) => {
   const message = errorMessage(caught);
@@ -1089,29 +1326,43 @@ const SportSelectorModal = ({
 const ManualWorkoutModal = ({
   visible,
   type,
+  session,
+  elapsedSeconds,
   durationMinutes,
   sets,
   reps,
   weightKg,
   saving,
+  validationError,
   onDuration,
   onSets,
   onReps,
   onWeight,
+  onStart,
+  onPause,
+  onResume,
+  onFinish,
   onSave,
   onClose
 }: {
   visible: boolean;
   type: ActivityType;
+  session: ManualWorkoutSession | null;
+  elapsedSeconds: number;
   durationMinutes: string;
   sets: string;
   reps: string;
   weightKg: string;
   saving: boolean;
+  validationError: string | null;
   onDuration: (value: string) => void;
   onSets: (value: string) => void;
   onReps: (value: string) => void;
   onWeight: (value: string) => void;
+  onStart: () => void;
+  onPause: () => void;
+  onResume: () => void;
+  onFinish: () => void;
   onSave: () => void;
   onClose: () => void;
 }) => (
@@ -1121,19 +1372,62 @@ const ManualWorkoutModal = ({
         <View style={styles.sheetHeader}>
           <View>
             <AppText variant="caption" style={{ color: colors.primary }}>
-              Manual log
+              Manual workout
             </AppText>
-            <AppText variant="title">{ACTIVITY_LABELS[type]}</AppText>
+            <AppText variant="title">{ACTIVITY_LABELS[session?.activityType ?? type]}</AppText>
           </View>
           <Pressable onPress={onClose} style={styles.iconButton}>
             <Ionicons name="close" size={22} color={colors.text} />
           </Pressable>
         </View>
-        <TextField placeholder="Duration minutes" keyboardType="numeric" value={durationMinutes} onChangeText={onDuration} />
-        <TextField placeholder="Sets optional" keyboardType="numeric" value={sets} onChangeText={onSets} />
-        <TextField placeholder="Reps optional" keyboardType="numeric" value={reps} onChangeText={onReps} />
-        <TextField placeholder="Weight kg optional" keyboardType="numeric" value={weightKg} onChangeText={onWeight} />
-        <PrimaryButton label={saving ? 'Saving...' : 'Save workout'} onPress={onSave} disabled={saving || Number(durationMinutes || 0) <= 0} />
+
+        {!session && (
+          <View style={styles.manualStartState}>
+            <Ionicons name="timer-outline" size={34} color={colors.primary} />
+            <AppText style={styles.manualStartCopy}>Start when your workout begins. The timer survives normal background transitions.</AppText>
+            <PrimaryButton label="Start workout" onPress={onStart} />
+          </View>
+        )}
+
+        {session && ['recording', 'paused', 'finishing'].includes(session.phase) && (
+          <View style={styles.manualTimerState}>
+            <AppText variant="caption" style={{ color: session.phase === 'paused' ? colors.warning : colors.primary }}>
+              {session.phase === 'paused' ? 'PAUSED' : session.phase === 'finishing' ? 'FINISHING' : 'ACTIVE'}
+            </AppText>
+            <AppText style={styles.manualTimerValue}>{formatDuration(elapsedSeconds)}</AppText>
+            <View style={styles.manualTimerControls}>
+              {session.phase === 'recording' && (
+                <PrimaryButton label="Pause" variant="secondary" onPress={onPause} style={styles.manualTimerButton} />
+              )}
+              {session.phase === 'paused' && (
+                <PrimaryButton label="Resume" onPress={onResume} style={styles.manualTimerButton} />
+              )}
+              <PrimaryButton
+                label="Finish"
+                variant="danger"
+                onPress={onFinish}
+                disabled={session.phase === 'finishing' || elapsedSeconds < 1}
+                style={styles.manualTimerButton}
+              />
+            </View>
+          </View>
+        )}
+
+        {session && ['details', 'saving'].includes(session.phase) && (
+          <>
+            <AppText variant="caption" style={{ color: colors.primary }}>Workout details</AppText>
+            <TextField placeholder="Duration minutes" keyboardType="decimal-pad" value={durationMinutes} onChangeText={onDuration} />
+            <TextField placeholder="Sets optional" keyboardType="number-pad" value={sets} onChangeText={onSets} />
+            <TextField placeholder="Reps optional" keyboardType="number-pad" value={reps} onChangeText={onReps} />
+            <TextField placeholder="Weight kg optional" keyboardType="decimal-pad" value={weightKg} onChangeText={onWeight} />
+            {validationError && <AppText style={styles.manualValidationError}>{validationError}</AppText>}
+            <PrimaryButton
+              label={saving || session.phase === 'saving' ? 'Saving...' : 'Save workout'}
+              onPress={onSave}
+              disabled={saving || session.phase === 'saving' || !durationMinutes.trim()}
+            />
+          </>
+        )}
       </View>
     </View>
   </Modal>
@@ -1832,6 +2126,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.md
+  },
+  manualStartState: {
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md
+  },
+  manualStartCopy: {
+    color: colors.muted,
+    textAlign: 'center',
+    lineHeight: 21
+  },
+  manualTimerState: {
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md
+  },
+  manualTimerValue: {
+    color: colors.text,
+    fontSize: 42,
+    lineHeight: 50,
+    fontWeight: '900'
+  },
+  manualTimerControls: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: spacing.sm
+  },
+  manualTimerButton: {
+    flex: 1
+  },
+  manualValidationError: {
+    color: colors.warning,
+    lineHeight: 20
   },
   iconButton: {
     width: 44,

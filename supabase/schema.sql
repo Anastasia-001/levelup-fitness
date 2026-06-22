@@ -47,18 +47,32 @@ create table public.characters (
 create table public.activities (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
+  client_session_id text,
   type public.activity_type not null,
   title text not null,
   started_at timestamptz not null,
   completed_at timestamptz not null default now(),
   local_date date,
   local_week_start date,
-  duration_seconds integer not null check (duration_seconds > 0),
-  distance_meters numeric,
+  duration_seconds integer not null check (
+    duration_seconds > 0
+    and (type not in ('gym_workout', 'pushups', 'swimming', 'other_workout') or duration_seconds <= 43200)
+  ),
+  distance_meters numeric check (
+    distance_meters is null or (
+      distance_meters >= 0 and distance_meters <= 1000000
+      and distance_meters::text not in ('NaN', 'Infinity', '-Infinity')
+    )
+  ),
   route jsonb,
-  sets integer,
-  reps integer,
-  weight_kg numeric,
+  sets integer check (sets is null or sets between 0 and 1000),
+  reps integer check (reps is null or reps between 0 and 100000),
+  weight_kg numeric check (
+    weight_kg is null or (
+      weight_kg >= 0 and weight_kg <= 1000
+      and weight_kg::text not in ('NaN', 'Infinity', '-Infinity')
+    )
+  ),
   photo_url text,
   photo_path text,
   personal_record_ids text[] not null default '{}'::text[],
@@ -233,6 +247,9 @@ create table public.cosmetic_unlock_catalog (
 );
 
 create index activities_user_completed_idx on public.activities (user_id, completed_at desc);
+create unique index activities_user_client_session_unique
+  on public.activities (user_id, client_session_id)
+  where client_session_id is not null;
 create index missions_user_date_idx on public.missions (user_id, mission_date);
 create index personal_records_user_idx on public.personal_records (user_id, achieved_at desc);
 
@@ -919,6 +936,8 @@ declare
   v_completed_now boolean;
   v_mission_bonus integer := 0;
   v_missions_completed jsonb := '[]'::jsonb;
+  v_expected_activity_exp integer;
+  v_expected_stat_exp jsonb;
   v_endurance integer := 0;
   v_speed integer := 0;
   v_strength integer := 0;
@@ -927,6 +946,8 @@ declare
   v_character_exp integer := 0;
   v_level_before integer;
   v_level_after integer;
+  v_base_exp numeric;
+  v_weight_bonus numeric;
   v_processed_at timestamptz := now();
   v_summary jsonb;
 begin
@@ -935,9 +956,65 @@ begin
   select * into v_activity from public.activities
   where id = p_activity_id and user_id = v_user_id for update;
   if not found then raise exception 'Activity not found'; end if;
-  if v_activity.reward_processed_at is not null and v_activity.reward_summary is not null then
+  if v_activity.reward_processed_at is not null then
+    if v_activity.reward_summary is null then
+      raise exception 'Activity has a reward marker but no reward summary; manual review is required';
+    end if;
     return v_activity.reward_summary;
   end if;
+  if v_activity.reward_summary is not null then
+    raise exception 'Activity has a reward summary without a processing marker; manual review is required';
+  end if;
+
+  if v_activity.duration_seconds <= 0 then raise exception 'Activity duration must be greater than zero'; end if;
+  if v_activity.type in ('gym_workout', 'pushups', 'swimming', 'other_workout')
+    and v_activity.duration_seconds > 43200 then
+    raise exception 'Manual workout duration exceeds the 12-hour safety limit';
+  end if;
+  if v_activity.distance_meters is not null and (
+    v_activity.distance_meters < 0 or v_activity.distance_meters > 1000000
+    or v_activity.distance_meters::text in ('NaN', 'Infinity', '-Infinity')
+  ) then raise exception 'Activity distance is invalid'; end if;
+  if v_activity.sets is not null and (v_activity.sets < 0 or v_activity.sets > 1000) then
+    raise exception 'Activity sets are invalid';
+  end if;
+  if v_activity.reps is not null and (v_activity.reps < 0 or v_activity.reps > 100000) then
+    raise exception 'Activity reps are invalid';
+  end if;
+  if v_activity.weight_kg is not null and (
+    v_activity.weight_kg < 0 or v_activity.weight_kg > 1000
+    or v_activity.weight_kg::text in ('NaN', 'Infinity', '-Infinity')
+  ) then raise exception 'Activity weight is invalid'; end if;
+
+  v_base_exp := case v_activity.type
+    when 'run' then 18 when 'walk' then 12 when 'bike' then 16 when 'hike' then 20
+    when 'gym_workout' then 18 when 'pushups' then 8 when 'swimming' then 20 else 14
+  end;
+  v_weight_bonus := least(30::numeric, coalesce(v_activity.weight_kg, 0) / 4.0);
+  v_expected_activity_exp := greatest(5, round(
+    v_base_exp + (v_activity.duration_seconds / 60.0) * 1.5
+    + (coalesce(v_activity.distance_meters, 0) / 1000.0) * 12
+    + coalesce(v_activity.reps, 0) * 0.35 + coalesce(v_activity.sets, 0) * 2
+    + v_weight_bonus
+    + case when v_activity.type = 'pushups' then coalesce(v_activity.reps, 0) * 0.65 else 0 end
+  ))::integer;
+  if v_expected_activity_exp > 100000 then raise exception 'Calculated activity reward exceeds the safety limit'; end if;
+
+  v_endurance := round(v_expected_activity_exp * case v_activity.type
+    when 'run' then 0.45 when 'walk' then 0.45 when 'bike' then 0.55 when 'hike' then 0.55
+    when 'gym_workout' then 0.15 when 'swimming' then 0.55 when 'other_workout' then 0.30 else 0 end)::integer;
+  v_speed := round(v_expected_activity_exp * case v_activity.type
+    when 'run' then 0.35 when 'walk' then 0.15 when 'bike' then 0.30 else 0 end)::integer;
+  v_strength := round(v_expected_activity_exp * case v_activity.type
+    when 'hike' then 0.20 when 'gym_workout' then 0.65 when 'pushups' then 0.70
+    when 'swimming' then 0.25 when 'other_workout' then 0.25 else 0 end)::integer;
+  v_consistency := round(v_expected_activity_exp * case v_activity.type
+    when 'run' then 0.20 when 'walk' then 0.40 when 'bike' then 0.15 when 'hike' then 0.25
+    when 'gym_workout' then 0.20 when 'pushups' then 0.30 when 'swimming' then 0.20
+    when 'other_workout' then 0.45 else 0 end)::integer;
+  v_expected_stat_exp := jsonb_build_object(
+    'endurance', v_endurance, 'speed', v_speed, 'strength', v_strength, 'consistency', v_consistency
+  );
 
   select * into v_character from public.characters
   where user_id = v_user_id for update;
@@ -978,12 +1055,8 @@ begin
     end if;
   end loop;
 
-  v_endurance := coalesce((v_activity.stat_exp ->> 'endurance')::integer, 0);
-  v_speed := coalesce((v_activity.stat_exp ->> 'speed')::integer, 0);
-  v_strength := coalesce((v_activity.stat_exp ->> 'strength')::integer, 0);
-  v_consistency := coalesce((v_activity.stat_exp ->> 'consistency')::integer, 0);
   v_mission_consistency := round(v_mission_bonus * 0.35);
-  v_character_exp := v_activity.exp_earned + v_mission_bonus;
+  v_character_exp := v_expected_activity_exp + v_mission_bonus;
   v_level_before := v_character.level;
   v_level_after := public.level_for_total_exp(v_character.total_exp + v_character_exp);
 
@@ -999,7 +1072,7 @@ begin
 
   v_summary := jsonb_build_object(
     'characterExp', v_character_exp,
-    'activityExp', v_activity.exp_earned,
+    'activityExp', v_expected_activity_exp,
     'missionBonusExp', v_mission_bonus,
     'statExp', jsonb_build_object(
       'endurance', v_endurance,
@@ -1018,9 +1091,13 @@ begin
   );
 
   update public.activities set
+    exp_earned = v_expected_activity_exp,
+    stat_exp = v_expected_stat_exp,
     reward_processed_at = v_processed_at,
     reward_summary = v_summary
   where id = v_activity.id;
+  select activity.reward_summary into v_summary
+  from public.activities as activity where activity.id = v_activity.id;
   return v_summary;
 end;
 $$;

@@ -9,7 +9,7 @@ with suspicious_activities as (
     coalesce((a.reward_summary ->> 'goldCoins')::numeric, a.exp_earned::numeric, 0) as recorded_gold_coins,
     array_remove(array[
       case
-        when a.type in ('gym_workout', 'pushups', 'other_workout')
+        when a.type in ('gym_workout', 'pushups', 'swimming', 'other_workout')
           and a.duration_seconds > 43200
         then 'manual activity exceeds 12 hours'
       end,
@@ -37,7 +37,7 @@ with suspicious_activities as (
     ], null) as suspicious_reasons
   from public.activities as a
   where
-    (a.type in ('gym_workout', 'pushups', 'other_workout') and a.duration_seconds > 43200)
+    (a.type in ('gym_workout', 'pushups', 'swimming', 'other_workout') and a.duration_seconds > 43200)
     or a.duration_seconds > 604800
     or a.exp_earned > 10000
     or coalesce((a.reward_summary ->> 'characterExp')::numeric, 0) > 10000
@@ -172,4 +172,3 @@ left join lateral (
     and nodes.unlocked_at >= coalesce(suspicious.reward_processed_at, suspicious.completed_at) - interval '5 minutes'
 ) as skills on true
 order by suspicious.recorded_character_exp desc, suspicious.duration_seconds desc;
-

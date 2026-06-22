@@ -51,7 +51,7 @@ begin
   end if;
 
   if not (
-    (v_activity.type in ('gym_workout', 'pushups', 'other_workout') and v_activity.duration_seconds > 43200)
+    (v_activity.type in ('gym_workout', 'pushups', 'swimming', 'other_workout') and v_activity.duration_seconds > 43200)
     or v_activity.duration_seconds > 604800
     or v_activity.exp_earned > 10000
     or coalesce((v_activity.reward_summary ->> 'characterExp')::numeric, 0) > 10000
@@ -64,7 +64,7 @@ begin
   from public.activities as activity
   where activity.user_id = v_params.target_user_id
     and (
-      (activity.type in ('gym_workout', 'pushups', 'other_workout') and activity.duration_seconds > 43200)
+      (activity.type in ('gym_workout', 'pushups', 'swimming', 'other_workout') and activity.duration_seconds > 43200)
       or activity.duration_seconds > 604800
       or activity.exp_earned > 10000
       or coalesce((activity.reward_summary ->> 'characterExp')::numeric, 0) > 10000
@@ -767,4 +767,3 @@ rollback;
 -- 2. Replace the ROLLBACK above with COMMIT.
 -- 3. Run the complete script once and verify the final result set.
 -- COMMIT;
-

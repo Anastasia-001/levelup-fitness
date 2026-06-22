@@ -90,6 +90,14 @@ supabase/migrations/202606210004_fix_progression_rpc_ambiguity.sql
 
 This migration replaces only `public.unlock_achievements(text[])`. It preserves existing achievements and prevents duplicate rewards.
 
+Manual workout timer safety, per-session activity idempotency, and server-calculated activity rewards require:
+
+```text
+supabase/migrations/202606220001_prevent_manual_reward_corruption.sql
+```
+
+The migration enforces a 12-hour maximum for new manual workouts, validates new measurement values, and replaces `public.process_activity_rewards(uuid)` so rewards are calculated from validated persisted activity facts. Its new constraints are `NOT VALID`, so existing historical rows are preserved for review rather than rewritten automatically.
+
 ## Run Locally
 
 Start Expo:
