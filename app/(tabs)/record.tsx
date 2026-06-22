@@ -53,7 +53,9 @@ import { PERSONAL_RECORD_LABELS } from '@/utils/progression';
 
 type RecordingState = 'idle' | 'recording' | 'paused';
 type GpsStatus = 'finding' | 'ready' | 'unavailable';
-type PostSaveSyncWarning = { activityId: string; messages: string[] };
+type PostSaveSyncSubsystem = 'rewards' | 'missions' | 'progression' | 'levels';
+type PostSaveSyncFailure = { subsystem: PostSaveSyncSubsystem; message: string };
+type PostSaveSyncWarning = { activityId: string; failures: PostSaveSyncFailure[] };
 
 const sportGroups = [
   { id: 'gps-sports', title: 'GPS sports', items: GPS_ACTIVITY_TYPES },
@@ -514,7 +516,7 @@ export default function RecordScreen() {
     setSaving(true);
     setPostSaveSyncWarning(null);
     try {
-      const syncWarnings: string[] = [];
+      const syncFailures: PostSaveSyncFailure[] = [];
       const result = await saveActivity(userId, input);
       addActivity(result.activity);
       if (result.character) {
@@ -528,12 +530,12 @@ export default function RecordScreen() {
           setMissions(await getTodayMissions(userId));
         }
       } catch (caught) {
-        logRecordSaveError('refresh-missions-after-save', input, caught);
-        syncWarnings.push(`Missions: ${postSaveSyncErrorMessage(caught)}`);
+        logRecordSaveError('refresh-missions-after-save', { activityId: result.activity.id }, caught);
+        syncFailures.push(createPostSaveSyncFailure('missions', caught));
       }
 
       if (result.sideEffectError) {
-        syncWarnings.push(`Rewards: ${result.sideEffectError}`);
+        syncFailures.push(createPostSaveSyncFailure('rewards', result.sideEffectError));
       }
 
       let activityForSummary = result.activity;
@@ -542,20 +544,21 @@ export default function RecordScreen() {
       } catch (caught) {
         setNewPersonalRecords([]);
         logRecordSaveError('refresh-progression-after-save', { activityId: result.activity.id }, caught);
-        syncWarnings.push(`Progression: ${postSaveSyncErrorMessage(caught)}`);
+        syncFailures.push(createPostSaveSyncFailure('progression', caught));
       }
 
       setActivityTitle('');
       setSavedActivity(activityForSummary);
-      setPostSaveSyncWarning(syncWarnings.length ? {
-        activityId: result.activity.id,
-        messages: [...new Set(syncWarnings)]
-      } : null);
       try {
         setPendingLevelUps(await listPendingLevelUps(userId));
       } catch (caught) {
         logRecordSaveError('refresh-level-up-queue', { activityId: result.activity.id }, caught);
+        syncFailures.push(createPostSaveSyncFailure('levels', caught));
       }
+      setPostSaveSyncWarning(syncFailures.length ? {
+        activityId: result.activity.id,
+        failures: uniqueSyncFailures(syncFailures)
+      } : null);
       return true;
     } catch (caught) {
       logRecordSaveError('save-workout', input, caught);
@@ -569,42 +572,60 @@ export default function RecordScreen() {
   const retryPostSaveSync = async () => {
     if (!userId || !savedActivity || postSaveSyncRetrying) return;
     setPostSaveSyncRetrying(true);
-    const syncWarnings: string[] = [];
+    const failedSubsystems = new Set(
+      postSaveSyncWarning?.failures.map((failure) => failure.subsystem) ?? []
+    );
+    const syncFailures: PostSaveSyncFailure[] = [];
     let activityForSummary = savedActivity;
 
-    try {
-      await processPendingActivityRewards(userId);
-      const [nextActivities, nextCharacter] = await Promise.all([
-        listActivities(userId),
-        getCharacter(userId)
-      ]);
-      setActivities(nextActivities);
-      setCharacter(nextCharacter);
-      activityForSummary = nextActivities.find((activity) => activity.id === savedActivity.id) ?? savedActivity;
-      setSavedActivity(activityForSummary);
-    } catch (caught) {
-      logRecordSaveError('retry-rewards-after-save', { activityId: savedActivity.id }, caught);
-      syncWarnings.push(`Rewards: ${postSaveSyncErrorMessage(caught)}`);
+    if (failedSubsystems.has('rewards')) {
+      try {
+        await processPendingActivityRewards(userId);
+        const [nextActivities, nextCharacter] = await Promise.all([
+          listActivities(userId),
+          getCharacter(userId)
+        ]);
+        setActivities(nextActivities);
+        setCharacter(nextCharacter);
+        activityForSummary = nextActivities.find((activity) => activity.id === savedActivity.id) ?? savedActivity;
+        setSavedActivity(activityForSummary);
+      } catch (caught) {
+        logRecordSaveError('retry-rewards-after-save', { activityId: savedActivity.id }, caught);
+        syncFailures.push(createPostSaveSyncFailure('rewards', caught));
+      }
     }
 
-    try {
-      setMissions(await getTodayMissions(userId));
-    } catch (caught) {
-      logRecordSaveError('retry-missions-after-save', { activityId: savedActivity.id }, caught);
-      syncWarnings.push(`Missions: ${postSaveSyncErrorMessage(caught)}`);
+    if (failedSubsystems.has('missions')) {
+      try {
+        setMissions(await getTodayMissions(userId));
+      } catch (caught) {
+        logRecordSaveError('retry-missions-after-save', { activityId: savedActivity.id }, caught);
+        syncFailures.push(createPostSaveSyncFailure('missions', caught));
+      }
     }
 
-    try {
-      activityForSummary = await refreshProgressionForActivity(activityForSummary);
-      setSavedActivity(activityForSummary);
-    } catch (caught) {
-      logRecordSaveError('retry-progression-after-save', { activityId: savedActivity.id }, caught);
-      syncWarnings.push(`Progression: ${postSaveSyncErrorMessage(caught)}`);
+    if (failedSubsystems.has('progression')) {
+      try {
+        activityForSummary = await refreshProgressionForActivity(activityForSummary);
+        setSavedActivity(activityForSummary);
+      } catch (caught) {
+        logRecordSaveError('retry-progression-after-save', { activityId: savedActivity.id }, caught);
+        syncFailures.push(createPostSaveSyncFailure('progression', caught));
+      }
     }
 
-    setPostSaveSyncWarning(syncWarnings.length ? {
+    if (failedSubsystems.has('levels')) {
+      try {
+        setPendingLevelUps(await listPendingLevelUps(userId));
+      } catch (caught) {
+        logRecordSaveError('retry-level-up-queue', { activityId: savedActivity.id }, caught);
+        syncFailures.push(createPostSaveSyncFailure('levels', caught));
+      }
+    }
+
+    setPostSaveSyncWarning(syncFailures.length ? {
       activityId: savedActivity.id,
-      messages: [...new Set(syncWarnings)]
+      failures: uniqueSyncFailures(syncFailures)
     } : null);
     setPostSaveSyncRetrying(false);
   };
@@ -932,6 +953,24 @@ const postSaveSyncErrorMessage = (caught: unknown) => {
   return message || 'Your activity is saved, but this data could not synchronize yet.';
 };
 
+const createPostSaveSyncFailure = (
+  subsystem: PostSaveSyncSubsystem,
+  caught: unknown
+): PostSaveSyncFailure => ({ subsystem, message: postSaveSyncErrorMessage(caught) });
+
+const uniqueSyncFailures = (failures: PostSaveSyncFailure[]) =>
+  [...new Map(failures.map((failure) => [failure.subsystem, failure])).values()];
+
+const POST_SAVE_SYNC_LABELS: Record<PostSaveSyncSubsystem, string> = {
+  rewards: 'Rewards',
+  missions: 'Missions',
+  progression: 'Progression',
+  levels: 'Level queue'
+};
+
+const formatPostSaveSyncFailure = (failure: PostSaveSyncFailure) =>
+  `${POST_SAVE_SYNC_LABELS[failure.subsystem]}: ${failure.message}`;
+
 const errorMessage = (caught: unknown) => {
   if (caught instanceof Error) return caught.message;
   if (typeof caught === 'string') return caught;
@@ -972,7 +1011,7 @@ const serializeError = (caught: unknown) => {
 
 const logRecordSaveError = (stage: string, payload: unknown, caught: unknown) => {
   if (!__DEV__) return;
-  console.error('[LevelUp] Record save flow error', {
+  console.warn('[LevelUp] Record save flow warning', {
     stage,
     payload,
     error: serializeError(caught)
@@ -1272,7 +1311,7 @@ const PostActivityModal = ({
                   <View style={{ flex: 1, gap: spacing.xxs }}>
                     <AppText style={styles.postSyncWarningTitle}>Activity saved - sync needs attention</AppText>
                     <AppText variant="caption" muted numberOfLines={3}>
-                      {syncWarning.messages.join(' ')}
+                      {syncWarning.failures.map(formatPostSaveSyncFailure).join(' ')}
                     </AppText>
                   </View>
                   <Pressable

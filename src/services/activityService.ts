@@ -557,7 +557,7 @@ const serializeError = (error: unknown) => {
 
 const logActivitySaveError = (stage: string, payload: unknown, error: unknown) => {
   if (!__DEV__) return;
-  console.error('[LevelUp] Activity save error', {
+  console.warn('[LevelUp] Activity save warning', {
     stage,
     payload,
     error: serializeError(error)
