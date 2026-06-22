@@ -197,6 +197,7 @@ export default function CharacterScreen() {
 }
 
 const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => void }) => {
+  const { height: screenHeight } = useWindowDimensions();
   const character = useAppStore((state) => state.character);
   const activities = useAppStore((state) => state.activities);
   const achievements = useAppStore((state) => state.achievements);
@@ -213,6 +214,7 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
   const [category, setCategory] = useState<WardrobeCategory>('head');
   const [equippingId, setEquippingId] = useState<string | null>(null);
   const [poseSavingId, setPoseSavingId] = useState<string | null>(null);
+  const previewHeight = screenHeight < 700 ? 220 : screenHeight < 800 ? 244 : 272;
   const ownedIds = useMemo(() => new Set(ownedCosmetics.map((item) => item.itemId)), [ownedCosmetics]);
   const progressContext = useMemo(
     () => ({
@@ -284,12 +286,12 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
 
           <LinearGradient
             colors={['rgba(143, 92, 255, 0.14)', 'rgba(3, 7, 19, 0.96)']}
-            style={styles.modalPreview}
+            style={[styles.modalPreview, { height: previewHeight }]}
           >
             <View style={styles.previewFloor} />
             <AvatarPreview
               equipment={equippedCosmetics}
-              size="wardrobe"
+              height={Math.min(280, previewHeight - spacing.sm)}
               pose={presentation?.equippedPose}
               evolutionStage={presentation?.highestEvolutionStage}
             />
@@ -307,14 +309,14 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
                 onPress={() => setCategory(nextCategory)}
                 style={[styles.categoryPill, category === nextCategory && styles.categoryPillActive]}
               >
-                <AppText style={category === nextCategory && styles.categoryPillText}>
+                <AppText style={[styles.categoryLabel, category === nextCategory && styles.categoryPillText]}>
                   {nextCategory === 'poses' ? 'Poses' : CATEGORY_LABELS[nextCategory]}
                 </AppText>
               </Pressable>
             ))}
           </ScrollView>
 
-          <ScrollView contentContainerStyle={styles.itemList} showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.itemScroller} contentContainerStyle={styles.itemList} showsVerticalScrollIndicator={false}>
             {category === 'poses' ? CHARACTER_POSES.map((pose) => {
               const selected = presentation?.equippedPose === pose.id;
               const unlocked = isPoseUnlocked(pose.id, {
@@ -722,7 +724,6 @@ const styles = StyleSheet.create({
     borderColor: colors.borderDim
   },
   modalPreview: {
-    height: 272,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radii.md,
@@ -739,20 +740,25 @@ const styles = StyleSheet.create({
   },
   categoryScroller: {
     flexGrow: 0,
-    maxHeight: 42
+    minHeight: 52
   },
   categoryStrip: {
+    minHeight: 52,
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.xs,
+    paddingVertical: spacing.xs,
     paddingRight: spacing.md
   },
   categoryPill: {
+    minHeight: 40,
     borderRadius: radii.pill,
     borderWidth: 1,
     borderColor: colors.borderDim,
     backgroundColor: colors.cardHigh,
     paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs
+    paddingVertical: spacing.xs,
+    justifyContent: 'center'
   },
   categoryPillActive: {
     borderColor: colors.primary,
@@ -761,6 +767,13 @@ const styles = StyleSheet.create({
   categoryPillText: {
     color: colors.primary,
     fontWeight: '900'
+  },
+  categoryLabel: {
+    lineHeight: 18
+  },
+  itemScroller: {
+    flex: 1,
+    minHeight: 0
   },
   itemList: {
     gap: spacing.sm,

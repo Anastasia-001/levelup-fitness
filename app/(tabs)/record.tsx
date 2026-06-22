@@ -1165,10 +1165,17 @@ const PostActivityModal = ({
   };
 
   return (
-    <Modal visible={Boolean(activity)} animationType="slide" onRequestClose={() => {
-      if (!syncRetrying) onClose();
-    }}>
-      <SafeAreaView style={styles.postSafeArea} edges={['top', 'right', 'bottom', 'left']}>
+    <Modal
+      visible={Boolean(activity)}
+      animationType="slide"
+      presentationStyle="fullScreen"
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={() => {
+        if (!syncRetrying) onClose();
+      }}
+    >
+      <SafeAreaView style={styles.postSafeArea} edges={['right', 'left']}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.postKeyboard}
@@ -1178,8 +1185,8 @@ const PostActivityModal = ({
               contentContainerStyle={[
                 styles.postScroll,
                 {
-                  paddingTop: Math.max(spacing.lg, insets.top ? spacing.md : spacing.lg),
-                  paddingBottom: Math.max(spacing.xl, insets.bottom + spacing.lg)
+                  paddingTop: insets.top + spacing.lg,
+                  paddingBottom: insets.bottom + spacing.xl
                 }
               ]}
               showsVerticalScrollIndicator={false}
