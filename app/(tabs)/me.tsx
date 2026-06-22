@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ActivityHistoryList } from '@/components/ActivityHistoryList';
 import { AppText } from '@/components/AppText';
@@ -12,6 +12,7 @@ import { ACHIEVEMENTS } from '@/constants/achievements';
 import { ACTIVITY_LABELS } from '@/constants/activities';
 import { getFitnessClass } from '@/constants/fitnessClasses';
 import { colors, radii, spacing } from '@/constants/theme';
+import { useBootstrap } from '@/hooks/useBootstrap';
 import { supabase } from '@/lib/supabase';
 import { setFitnessClass } from '@/services/characterPresentationService';
 import { syncEarnedCosmetics } from '@/services/cosmeticService';
@@ -23,6 +24,7 @@ import { formatPersonalRecordValue, PERSONAL_RECORD_LABELS } from '@/utils/progr
 
 export default function MeScreen() {
   const profile = useAppStore((state) => state.profile);
+  const accountBootstrap = useAppStore((state) => state.accountBootstrap);
   const activities = useAppStore((state) => state.activities);
   const streaks = useAppStore((state) => state.progressionStreaks);
   const achievements = useAppStore((state) => state.achievements);
@@ -31,7 +33,11 @@ export default function MeScreen() {
   const setCharacterPresentation = useAppStore((state) => state.setCharacterPresentation);
   const addOwnedCosmetic = useAppStore((state) => state.addOwnedCosmetic);
   const fitnessClass = getFitnessClass(presentation?.fitnessClass);
-  const units = profile?.unitPreference ?? 'metric';
+  const { bootstrap } = useBootstrap();
+  const currentProfile = profile && (!accountBootstrap.userId || profile.id === accountBootstrap.userId)
+    ? profile
+    : null;
+  const units = currentProfile?.unitPreference ?? 'metric';
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [achievementsVisible, setAchievementsVisible] = useState(false);
   const [classPickerVisible, setClassPickerVisible] = useState(false);
@@ -51,6 +57,15 @@ export default function MeScreen() {
     }
   };
 
+  const retryProfile = async () => {
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session?.user) {
+      Alert.alert('Session unavailable', error?.message ?? 'Please log in again.');
+      return;
+    }
+    await bootstrap(data.session.user.id, { force: true });
+  };
+
   return (
     <Screen>
       <View style={styles.header}>
@@ -59,8 +74,10 @@ export default function MeScreen() {
             <Ionicons name="person" size={30} color={colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
-            <AppText variant="title">{profile?.username ?? 'Rookie'}</AppText>
-            <AppText muted>{profile?.location || 'Set your location'}</AppText>
+            <AppText variant="title">
+              {currentProfile?.username ?? (accountBootstrap.profileState === 'error' ? 'Profile unavailable' : 'Loading profile...')}
+            </AppText>
+            <AppText muted>{currentProfile?.location || (accountBootstrap.profileState === 'error' ? 'Tap Settings to retry' : 'Restoring your account')}</AppText>
             <View style={styles.profileClassRow}>
               <Ionicons name={fitnessClass.icon} size={14} color={fitnessClass.accent} />
               <AppText variant="caption" style={{ color: fitnessClass.accent }}>{fitnessClass.name}</AppText>
@@ -166,6 +183,10 @@ export default function MeScreen() {
 
       <SettingsModal
         visible={settingsVisible}
+        profile={currentProfile}
+        profileState={accountBootstrap.profileState}
+        profileError={accountBootstrap.profileError}
+        onRetry={retryProfile}
         onClose={() => setSettingsVisible(false)}
         onOpenFitnessClass={() => {
           setSettingsVisible(false);
@@ -311,14 +332,21 @@ const AchievementsModal = ({
 
 const SettingsModal = ({
   visible,
+  profile,
+  profileState,
+  profileError,
+  onRetry,
   onClose,
   onOpenFitnessClass
 }: {
   visible: boolean;
+  profile: Profile | null;
+  profileState: ReturnType<typeof useAppStore.getState>['accountBootstrap']['profileState'];
+  profileError: string | null;
+  onRetry: () => Promise<void>;
   onClose: () => void;
   onOpenFitnessClass: () => void;
 }) => {
-  const profile = useAppStore((state) => state.profile);
   const setProfile = useAppStore((state) => state.setProfile);
   const reset = useAppStore((state) => state.reset);
   const presentation = useAppStore((state) => state.characterPresentation);
@@ -356,7 +384,11 @@ const SettingsModal = ({
   }, [draft, profile, setProfile]);
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      Alert.alert('Logout failed', error.message);
+      return;
+    }
     reset();
   };
 
@@ -370,8 +402,6 @@ const SettingsModal = ({
     Alert.alert('Email update started', 'Check your inbox to confirm the new email address.');
     setEmail('');
   };
-
-  if (!draft) return null;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -389,7 +419,22 @@ const SettingsModal = ({
             </Pressable>
           </View>
 
-          <ScrollView contentContainerStyle={styles.settingsContent} showsVerticalScrollIndicator={false}>
+          {profileState === 'error' ? (
+            <View style={styles.settingsState}>
+              <View style={styles.settingsErrorIcon}>
+                <Ionicons name="alert-circle-outline" size={28} color={colors.warning} />
+              </View>
+              <AppText variant="subtitle">Profile could not be loaded</AppText>
+              <AppText muted style={styles.settingsStateText}>{profileError ?? 'Check your connection and try again.'}</AppText>
+              <PrimaryButton label="Retry profile" onPress={() => void onRetry()} />
+            </View>
+          ) : !draft ? (
+            <View style={styles.settingsState}>
+              <ActivityIndicator color={colors.primary} size="large" />
+              <AppText variant="subtitle">Loading your settings</AppText>
+              <AppText muted style={styles.settingsStateText}>Restoring the profile connected to your current session.</AppText>
+            </View>
+          ) : <ScrollView contentContainerStyle={styles.settingsContent} showsVerticalScrollIndicator={false}>
             <TextField value={draft.username} onChangeText={(username) => setDraft({ ...draft, username })} placeholder="Username" />
             <TextField value={draft.location ?? ''} onChangeText={(location) => setDraft({ ...draft, location })} placeholder="Location" />
             <View style={styles.emailRow}>
@@ -421,7 +466,7 @@ const SettingsModal = ({
             <PrimaryButton label="Policy / Privacy Policy" variant="secondary" onPress={() => Alert.alert('Policy', 'Privacy policy placeholder.')} />
             <PrimaryButton label="Log out" variant="secondary" onPress={logout} />
             <PrimaryButton label="Delete account" variant="danger" onPress={() => Alert.alert('Delete account', 'Account deletion flow placeholder.')} />
-          </ScrollView>
+          </ScrollView>}
         </View>
       </View>
     </Modal>
@@ -689,6 +734,27 @@ const styles = StyleSheet.create({
   settingsContent: {
     gap: spacing.md,
     paddingBottom: spacing.lg
+  },
+  settingsState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl
+  },
+  settingsStateText: {
+    textAlign: 'center'
+  },
+  settingsErrorIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    backgroundColor: 'rgba(255, 184, 77, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   classSetting: {
     minHeight: 64,

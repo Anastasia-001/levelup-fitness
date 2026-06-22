@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AppText } from '@/components/AppText';
@@ -39,8 +39,15 @@ const statRows = [
 type WardrobeCategory = CosmeticCategory | 'poses';
 
 export default function CharacterScreen() {
-  const character = useAppStore((state) => state.character);
-  const profile = useAppStore((state) => state.profile);
+  const storedCharacter = useAppStore((state) => state.character);
+  const storedProfile = useAppStore((state) => state.profile);
+  const accountBootstrap = useAppStore((state) => state.accountBootstrap);
+  const character = storedCharacter && (!accountBootstrap.userId || storedCharacter.userId === accountBootstrap.userId)
+    ? storedCharacter
+    : null;
+  const profile = storedProfile && (!accountBootstrap.userId || storedProfile.id === accountBootstrap.userId)
+    ? storedProfile
+    : null;
   const equippedCosmetics = useAppStore((state) => state.equippedCosmetics);
   const presentation = useAppStore((state) => state.characterPresentation);
   const progress = character ? levelFromTotalExp(character.totalExp) : null;
@@ -65,6 +72,28 @@ export default function CharacterScreen() {
       throw caught;
     }
   };
+
+  if (!character) {
+    return (
+      <Screen scroll={false}>
+        <View style={styles.characterLoadState}>
+          {accountBootstrap.loading ? (
+            <ActivityIndicator color={colors.primary} size="large" />
+          ) : (
+            <Ionicons name="alert-circle-outline" size={34} color={colors.warning} />
+          )}
+          <AppText variant="title">
+            {accountBootstrap.loading ? 'Loading character' : 'Character unavailable'}
+          </AppText>
+          <AppText muted style={{ textAlign: 'center' }}>
+            {accountBootstrap.loading
+              ? 'Restoring your existing level, EXP, stats, and equipment.'
+              : 'Open Me and use Settings to retry your account data.'}
+          </AppText>
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <Screen scroll={false}>
@@ -435,6 +464,13 @@ const isPoseUnlocked = (
 };
 
 const styles = StyleSheet.create({
+  characterLoadState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.xl
+  },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',

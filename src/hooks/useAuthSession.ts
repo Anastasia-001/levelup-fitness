@@ -7,17 +7,31 @@ export const useAuthSession = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    let mounted = true;
+    let authRevision = 0;
+
+    const loadSession = async () => {
+      const revision = authRevision;
+      const { data, error } = await supabase.auth.getSession();
+      if (!mounted || revision !== authRevision) return;
+      if (error && __DEV__) console.warn('[LevelUp auth] Initial session failed.', error);
       setSession(data.session);
       setLoading(false);
-    });
+    };
+
+    void loadSession();
 
     const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      authRevision += 1;
+      if (!mounted) return;
       setSession(nextSession);
       setLoading(false);
     });
 
-    return () => data.subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      data.subscription.unsubscribe();
+    };
   }, []);
 
   return { session, loading };

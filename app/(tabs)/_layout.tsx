@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { colors } from '@/constants/theme';
-import { useBootstrap } from '@/hooks/useBootstrap';
+import { cancelBootstrap, useBootstrap } from '@/hooks/useBootstrap';
 import { supabase } from '@/lib/supabase';
+import { useAppStore } from '@/store/appStore';
 
 const icons = {
   shop: 'storefront-outline',
@@ -15,13 +16,47 @@ const icons = {
 
 export default function TabsLayout() {
   const { bootstrap } = useBootstrap();
+  const activeUserId = useRef<string | null>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      if (data.user) {
-        bootstrap(data.user.id);
+    let mounted = true;
+
+    const loadSession = async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (!mounted) return;
+      if (error) {
+        if (__DEV__) console.warn('[LevelUp auth] Session lookup failed.', error);
+        useAppStore.getState().setAccountBootstrap({
+          loading: false,
+          error: error.message,
+          profileState: 'error',
+          profileError: error.message
+        });
+        return;
+      }
+      const userId = data.session?.user.id ?? null;
+      activeUserId.current = userId;
+      if (userId) void bootstrap(userId);
+    };
+
+    void loadSession();
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const userId = session?.user.id ?? null;
+      if (userId === activeUserId.current) return;
+
+      const previousUserId = activeUserId.current;
+      activeUserId.current = userId;
+      if (previousUserId) cancelBootstrap(previousUserId);
+      if (userId) {
+        void bootstrap(userId);
       }
     });
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+      if (activeUserId.current) cancelBootstrap(activeUserId.current);
+    };
   }, [bootstrap]);
 
   return (

@@ -14,6 +14,16 @@ import {
   UserAchievement
 } from '@/types/domain';
 
+export type LoadState = 'idle' | 'loading' | 'ready' | 'error';
+
+export type AccountBootstrapState = {
+  userId: string | null;
+  loading: boolean;
+  error: string | null;
+  profileState: LoadState;
+  profileError: string | null;
+};
+
 type AppState = {
   profile: Profile | null;
   character: Character | null;
@@ -27,6 +37,7 @@ type AppState = {
   personalRecords: PersonalRecord[];
   pendingLevelUps: LevelUpCelebration[];
   skillTreeProgress: SkillTreeProgress | null;
+  accountBootstrap: AccountBootstrapState;
   setProfile: (profile: Profile | null) => void;
   setCharacter: (character: Character | null) => void;
   setCharacterPresentation: (presentation: CharacterPresentation | null) => void;
@@ -39,6 +50,7 @@ type AppState = {
   setPersonalRecords: (personalRecords: PersonalRecord[]) => void;
   setPendingLevelUps: (pendingLevelUps: LevelUpCelebration[]) => void;
   setSkillTreeProgress: (skillTreeProgress: SkillTreeProgress | null) => void;
+  setAccountBootstrap: (values: Partial<AccountBootstrapState>) => void;
   removePendingLevelUp: (level: number) => void;
   addOwnedCosmetic: (ownedCosmetic: OwnedCosmetic) => void;
   addActivity: (activity: Activity) => void;
@@ -59,6 +71,13 @@ export const useAppStore = create<AppState>((set) => ({
   personalRecords: [],
   pendingLevelUps: [],
   skillTreeProgress: null,
+  accountBootstrap: {
+    userId: null,
+    loading: false,
+    error: null,
+    profileState: 'idle',
+    profileError: null
+  },
   setProfile: (profile) => set({ profile }),
   setCharacter: (character) => set({ character }),
   setCharacterPresentation: (characterPresentation) => set({ characterPresentation }),
@@ -72,6 +91,8 @@ export const useAppStore = create<AppState>((set) => ({
   setPendingLevelUps: (pendingLevelUps) =>
     set({ pendingLevelUps: [...pendingLevelUps].sort((left, right) => left.level - right.level) }),
   setSkillTreeProgress: (skillTreeProgress) => set({ skillTreeProgress }),
+  setAccountBootstrap: (values) =>
+    set((state) => ({ accountBootstrap: { ...state.accountBootstrap, ...values } })),
   removePendingLevelUp: (level) =>
     set((state) => ({ pendingLevelUps: state.pendingLevelUps.filter((item) => item.level !== level) })),
   addOwnedCosmetic: (ownedCosmetic) =>
@@ -98,6 +119,13 @@ export const useAppStore = create<AppState>((set) => ({
       achievements: [],
       personalRecords: [],
       pendingLevelUps: [],
-      skillTreeProgress: null
+      skillTreeProgress: null,
+      accountBootstrap: {
+        userId: null,
+        loading: false,
+        error: null,
+        profileState: 'idle',
+        profileError: null
+      }
     })
 }));
