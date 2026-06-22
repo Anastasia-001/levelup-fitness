@@ -35,7 +35,7 @@ export const getTodayMissions = async (userId: string) => {
 
   if (error) {
     if (error.code === '23505') return listMissionsForDate(userId, missionDate);
-    throw error;
+    throw missionSchemaError(error);
   }
   return data.map(mapMission);
 };
@@ -110,25 +110,101 @@ const getMissionGenerationContext = async (
 ): Promise<MissionGenerationContext> => {
   const since = new Date();
   since.setDate(since.getDate() - 28);
-  const [character, presentation, activityResult, skillResult] = await Promise.all([
+  const [character, presentation, activityResult, skillNodes] = await Promise.all([
     getCharacter(userId),
-    syncCharacterPresentation(),
+    syncCharacterPresentation().catch((caught) => {
+      throw wave2ContextError(
+        caught,
+        'character presentation',
+        'supabase/migrations/202606210001_character_poses_evolution.sql'
+      );
+    }),
     supabase
       .from('activities')
       .select('*')
       .eq('user_id', userId)
       .gte('completed_at', since.toISOString())
       .order('completed_at', { ascending: false }),
-    supabase.from('user_skill_nodes').select('node_id').eq('user_id', userId)
+    supabase
+      .from('user_skill_nodes')
+      .select('node_id')
+      .eq('user_id', userId)
+      .then(({ data, error }) => {
+        if (error) {
+          throw wave2ContextError(
+            error,
+            'skill-tree mission context',
+            'supabase/migrations/202606210003_mission_skill_tree.sql'
+          );
+        }
+        return data;
+      })
   ]);
 
   if (activityResult.error) throw activityResult.error;
-  if (skillResult.error) throw skillResult.error;
   return {
     userLevel: character.level,
     fitnessClass: presentation.fitnessClass,
-    unlockedSkillNodeIds: skillResult.data.map((row) => row.node_id),
+    unlockedSkillNodeIds: skillNodes.map((row) => row.node_id),
     recentActivities: activityResult.data.map(mapActivity),
     missionDate
   };
+};
+
+const missionSchemaError = (caught: unknown) => {
+  const message = databaseErrorMessage(caught);
+  if (
+    isMissingDatabaseObject(caught) &&
+    /(template_id|difficulty|reward_coins|optional_unlock|mission_daily_rerolls)/i.test(message)
+  ) {
+    return createMigrationError(
+      caught,
+      'mission difficulty and reroll fields',
+      'supabase/migrations/202606200003_mission_difficulties_rerolls.sql'
+    );
+  }
+  return caught;
+};
+
+const wave2ContextError = (caught: unknown, subsystem: string, migration: string) => {
+  if (!isMissingDatabaseObject(caught)) return caught;
+  const message = databaseErrorMessage(caught);
+  if (/fitness_class/i.test(message)) {
+    return createMigrationError(
+      caught,
+      'fitness class mission context',
+      'supabase/migrations/202606210002_fitness_classes.sql'
+    );
+  }
+  return createMigrationError(caught, subsystem, migration);
+};
+
+const createMigrationError = (caught: unknown, subsystem: string, migration: string) => {
+  const source = caught && typeof caught === 'object' ? caught as Record<string, unknown> : {};
+  const error = new Error(
+    `Mission sync cannot load ${subsystem}. Run ${migration} in Supabase, then retry. ` +
+    `Database response: ${databaseErrorMessage(caught)}`
+  ) as Error & Record<string, unknown>;
+  error.name = 'MissionMigrationError';
+  error.code = source.code;
+  error.details = source.details;
+  error.hint = `Apply ${migration} without deleting existing mission data.`;
+  error.migration = migration;
+  return error;
+};
+
+const isMissingDatabaseObject = (caught: unknown) => {
+  const source = caught && typeof caught === 'object' ? caught as Record<string, unknown> : {};
+  const code = String(source.code ?? '');
+  const message = databaseErrorMessage(caught);
+  return ['42P01', '42703', '42883', 'PGRST202', 'PGRST204', 'PGRST205'].includes(code) ||
+    /does not exist|could not find|schema cache|undefined column/i.test(message);
+};
+
+const databaseErrorMessage = (caught: unknown) => {
+  if (caught instanceof Error) return caught.message;
+  if (caught && typeof caught === 'object' && 'message' in caught) {
+    return String((caught as { message?: unknown }).message ?? 'Unknown database error');
+  }
+  return String(caught || 'Unknown database error');
 };

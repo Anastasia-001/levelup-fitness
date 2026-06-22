@@ -82,6 +82,14 @@ Mission skill points, server-validated node spending, skill cosmetics, and the o
 supabase/migrations/202606210003_mission_skill_tree.sql
 ```
 
+The post-activity achievement RPC ambiguity hotfix requires:
+
+```text
+supabase/migrations/202606210004_fix_progression_rpc_ambiguity.sql
+```
+
+This migration replaces only `public.unlock_achievements(text[])`. It preserves existing achievements and prevents duplicate rewards.
+
 ## Run Locally
 
 Start Expo:

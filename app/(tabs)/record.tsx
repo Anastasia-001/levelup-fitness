@@ -16,6 +16,8 @@ import { ACTIVITY_LABELS, GPS_ACTIVITY_TYPES, MANUAL_ACTIVITY_TYPES, isGpsActivi
 import { colors, radii, shadows, spacing } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
 import {
+  listActivities,
+  processPendingActivityRewards,
   saveActivity,
   updateActivityRewardMilestones,
   updateActivityTitle,
@@ -35,7 +37,7 @@ import {
 import { fallbackActivityTitle } from '@/services/mappers';
 import { listPendingLevelUps } from '@/services/levelUpService';
 import { getTodayMissions } from '@/services/missionService';
-import { ensureProfileAndCharacter } from '@/services/profileService';
+import { ensureProfileAndCharacter, getCharacter } from '@/services/profileService';
 import { rebuildPersonalRecords, refreshProgressionMilestones } from '@/services/progressionService';
 import { useAppStore } from '@/store/appStore';
 import {
@@ -51,6 +53,7 @@ import { PERSONAL_RECORD_LABELS } from '@/utils/progression';
 
 type RecordingState = 'idle' | 'recording' | 'paused';
 type GpsStatus = 'finding' | 'ready' | 'unavailable';
+type PostSaveSyncWarning = { activityId: string; messages: string[] };
 
 const sportGroups = [
   { id: 'gps-sports', title: 'GPS sports', items: GPS_ACTIVITY_TYPES },
@@ -86,6 +89,8 @@ export default function RecordScreen() {
   const [gpsStatus, setGpsStatus] = useState<GpsStatus>('finding');
   const [savedActivity, setSavedActivity] = useState<Activity | null>(null);
   const [newPersonalRecords, setNewPersonalRecords] = useState<PersonalRecord[]>([]);
+  const [postSaveSyncWarning, setPostSaveSyncWarning] = useState<PostSaveSyncWarning | null>(null);
+  const [postSaveSyncRetrying, setPostSaveSyncRetrying] = useState(false);
   const watchRef = useRef<Location.LocationSubscription | null>(null);
   const recordingStateRef = useRef<RecordingState>('idle');
   const selectedTypeRef = useRef<ActivityType>('run');
@@ -109,6 +114,7 @@ export default function RecordScreen() {
   const setAchievements = useAppStore((state) => state.setAchievements);
   const setPersonalRecords = useAppStore((state) => state.setPersonalRecords);
   const setPendingLevelUps = useAppStore((state) => state.setPendingLevelUps);
+  const setActivities = useAppStore((state) => state.setActivities);
   const units = useAppStore((state) => state.profile?.unitPreference ?? 'metric');
   const selectedIsGps = isGpsActivity(selectedType);
 
@@ -436,6 +442,69 @@ export default function RecordScreen() {
     setManualModalVisible(false);
   };
 
+  const refreshProgressionForActivity = async (activity: Activity) => {
+    if (!userId) throw new Error('You need to be logged in to synchronize progression.');
+    const activities = [
+      activity,
+      ...useAppStore.getState().activities.filter((current) => current.id !== activity.id)
+    ];
+    const progression = await refreshProgressionMilestones({
+      userId,
+      activities,
+      newActivity: activity
+    });
+    const recordIds = progression.newPersonalRecords.map(
+      (record) => `${record.recordType}:${record.sportKey}`
+    );
+    const achievementsUnlocked = progression.newAchievements.flatMap((achievement) => {
+      const definition = getAchievementById(achievement.achievementId);
+      return definition
+        ? [{ id: definition.id, title: definition.title, rewardCoins: definition.rewardCoins }]
+        : [];
+    });
+    const personalRecords = progression.newPersonalRecords.map((record) => ({
+      recordType: record.recordType,
+      sportKey: record.sportKey
+    }));
+    let activityForSummary: Activity = {
+      ...activity,
+      personalRecordIds: [...new Set([...(activity.personalRecordIds ?? []), ...recordIds])]
+    };
+
+    const currentRewardSummary = activityForSummary.rewardSummary;
+    if (currentRewardSummary) {
+      try {
+        activityForSummary = await updateActivityRewardMilestones(activityForSummary, {
+          achievementsUnlocked,
+          personalRecords
+        });
+      } catch (caught) {
+        logRecordSaveError('persist-reward-milestones', { activityId: activity.id }, caught);
+        activityForSummary = {
+          ...activityForSummary,
+          rewardSummary: {
+            ...currentRewardSummary,
+            achievementsUnlocked,
+            personalRecords,
+            goldCoins:
+              currentRewardSummary.characterExp +
+              (currentRewardSummary.missionGoldCoins ?? 0) +
+              achievementsUnlocked.reduce((total, achievement) => total + achievement.rewardCoins, 0)
+          }
+        };
+      }
+    }
+
+    updateActivity(activityForSummary);
+    setNewPersonalRecords(progression.newPersonalRecords);
+    setProgressionStreaks(progression.streaks);
+    setAchievements(progression.achievements);
+    setPersonalRecords(progression.personalRecords);
+    setCharacter(progression.character);
+    progression.newCosmetics.forEach((cosmetic) => addOwnedCosmetic(cosmetic));
+    return activityForSummary;
+  };
+
   const saveWorkout = async (input: Parameters<typeof saveActivity>[1]) => {
     if (!userId) {
       Alert.alert('Could not save activity', 'You need to be logged in before saving an activity.');
@@ -443,7 +512,9 @@ export default function RecordScreen() {
     }
 
     setSaving(true);
+    setPostSaveSyncWarning(null);
     try {
+      const syncWarnings: string[] = [];
       const result = await saveActivity(userId, input);
       addActivity(result.activity);
       if (result.character) {
@@ -458,79 +529,28 @@ export default function RecordScreen() {
         }
       } catch (caught) {
         logRecordSaveError('refresh-missions-after-save', input, caught);
+        syncWarnings.push(`Missions: ${postSaveSyncErrorMessage(caught)}`);
       }
 
-      if (result.sideEffectError && __DEV__) {
-        console.warn('[LevelUp] Activity saved, but a post-save side effect failed.', result.sideEffectError);
+      if (result.sideEffectError) {
+        syncWarnings.push(`Rewards: ${result.sideEffectError}`);
       }
 
       let activityForSummary = result.activity;
       try {
-        const activities = [
-          result.activity,
-          ...useAppStore.getState().activities.filter((activity) => activity.id !== result.activity.id)
-        ];
-        const progression = await refreshProgressionMilestones({
-          userId,
-          activities,
-          newActivity: result.activity
-        });
-        const recordIds = progression.newPersonalRecords.map(
-          (record) => `${record.recordType}:${record.sportKey}`
-        );
-        const achievementsUnlocked = progression.newAchievements.flatMap((achievement) => {
-          const definition = getAchievementById(achievement.achievementId);
-          return definition
-            ? [{ id: definition.id, title: definition.title, rewardCoins: definition.rewardCoins }]
-            : [];
-        });
-        const personalRecords = progression.newPersonalRecords.map((record) => ({
-          recordType: record.recordType,
-          sportKey: record.sportKey
-        }));
-        activityForSummary = {
-          ...result.activity,
-          personalRecordIds: [...new Set([...(result.activity.personalRecordIds ?? []), ...recordIds])]
-        };
-
-        const currentRewardSummary = activityForSummary.rewardSummary;
-        if (currentRewardSummary) {
-          try {
-            activityForSummary = await updateActivityRewardMilestones(activityForSummary, {
-              achievementsUnlocked,
-              personalRecords
-            });
-          } catch (caught) {
-            logRecordSaveError('persist-reward-milestones', { activityId: result.activity.id }, caught);
-            activityForSummary = {
-              ...activityForSummary,
-              rewardSummary: {
-                ...currentRewardSummary,
-                achievementsUnlocked,
-                personalRecords,
-                goldCoins:
-                  currentRewardSummary.characterExp +
-                  (currentRewardSummary.missionGoldCoins ?? 0) +
-                  achievementsUnlocked.reduce((total, achievement) => total + achievement.rewardCoins, 0)
-              }
-            };
-          }
-        }
-        updateActivity(activityForSummary);
-
-        setNewPersonalRecords(progression.newPersonalRecords);
-        setProgressionStreaks(progression.streaks);
-        setAchievements(progression.achievements);
-        setPersonalRecords(progression.personalRecords);
-        setCharacter(progression.character);
-        progression.newCosmetics.forEach((cosmetic) => addOwnedCosmetic(cosmetic));
+        activityForSummary = await refreshProgressionForActivity(result.activity);
       } catch (caught) {
         setNewPersonalRecords([]);
         logRecordSaveError('refresh-progression-after-save', { activityId: result.activity.id }, caught);
+        syncWarnings.push(`Progression: ${postSaveSyncErrorMessage(caught)}`);
       }
 
       setActivityTitle('');
       setSavedActivity(activityForSummary);
+      setPostSaveSyncWarning(syncWarnings.length ? {
+        activityId: result.activity.id,
+        messages: [...new Set(syncWarnings)]
+      } : null);
       try {
         setPendingLevelUps(await listPendingLevelUps(userId));
       } catch (caught) {
@@ -544,6 +564,49 @@ export default function RecordScreen() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const retryPostSaveSync = async () => {
+    if (!userId || !savedActivity || postSaveSyncRetrying) return;
+    setPostSaveSyncRetrying(true);
+    const syncWarnings: string[] = [];
+    let activityForSummary = savedActivity;
+
+    try {
+      await processPendingActivityRewards(userId);
+      const [nextActivities, nextCharacter] = await Promise.all([
+        listActivities(userId),
+        getCharacter(userId)
+      ]);
+      setActivities(nextActivities);
+      setCharacter(nextCharacter);
+      activityForSummary = nextActivities.find((activity) => activity.id === savedActivity.id) ?? savedActivity;
+      setSavedActivity(activityForSummary);
+    } catch (caught) {
+      logRecordSaveError('retry-rewards-after-save', { activityId: savedActivity.id }, caught);
+      syncWarnings.push(`Rewards: ${postSaveSyncErrorMessage(caught)}`);
+    }
+
+    try {
+      setMissions(await getTodayMissions(userId));
+    } catch (caught) {
+      logRecordSaveError('retry-missions-after-save', { activityId: savedActivity.id }, caught);
+      syncWarnings.push(`Missions: ${postSaveSyncErrorMessage(caught)}`);
+    }
+
+    try {
+      activityForSummary = await refreshProgressionForActivity(activityForSummary);
+      setSavedActivity(activityForSummary);
+    } catch (caught) {
+      logRecordSaveError('retry-progression-after-save', { activityId: savedActivity.id }, caught);
+      syncWarnings.push(`Progression: ${postSaveSyncErrorMessage(caught)}`);
+    }
+
+    setPostSaveSyncWarning(syncWarnings.length ? {
+      activityId: savedActivity.id,
+      messages: [...new Set(syncWarnings)]
+    } : null);
+    setPostSaveSyncRetrying(false);
   };
 
   const addPhoto = async (source: 'camera' | 'library') => {
@@ -663,6 +726,8 @@ export default function RecordScreen() {
     setTitleSaving(false);
     setSportSaving(false);
     setNewPersonalRecords([]);
+    setPostSaveSyncWarning(null);
+    setPostSaveSyncRetrying(false);
     setElapsedSeconds(0);
     setDistanceMeters(0);
     setRoute([]);
@@ -807,11 +872,14 @@ export default function RecordScreen() {
         photoUploadError={photoUploadError}
         photoRenderFailed={photoRenderFailed}
         newPersonalRecords={newPersonalRecords}
+        syncWarning={postSaveSyncWarning}
+        syncRetrying={postSaveSyncRetrying}
         onTitleChange={setActivityTitle}
         onSportChange={correctSavedActivityType}
         onPhotoRenderError={() => setPhotoRenderFailed(true)}
         onCamera={() => addPhoto('camera')}
         onLibrary={() => addPhoto('library')}
+        onRetrySync={retryPostSaveSync}
         onClose={closePostActivity}
       />
     </Screen>
@@ -856,6 +924,14 @@ const activitySaveErrorMessage = (caught: unknown) => {
   return message || 'Check your connection and try again.';
 };
 
+const postSaveSyncErrorMessage = (caught: unknown) => {
+  const message = errorMessage(caught);
+  if (/achievement_id.*ambiguous|42702/i.test(message)) {
+    return 'Progression needs the latest Supabase achievement hotfix. Your activity is already saved.';
+  }
+  return message || 'Your activity is saved, but this data could not synchronize yet.';
+};
+
 const errorMessage = (caught: unknown) => {
   if (caught instanceof Error) return caught.message;
   if (typeof caught === 'string') return caught;
@@ -867,7 +943,16 @@ const errorMessage = (caught: unknown) => {
 
 const serializeError = (caught: unknown) => {
   if (caught instanceof Error) {
-    return { name: caught.name, message: caught.message, stack: caught.stack };
+    const value = caught as Error & Record<string, unknown>;
+    return {
+      name: caught.name,
+      code: value.code,
+      message: caught.message,
+      details: value.details,
+      hint: value.hint,
+      migration: value.migration,
+      stack: caught.stack
+    };
   }
 
   if (!caught || typeof caught !== 'object') {
@@ -1026,11 +1111,14 @@ const PostActivityModal = ({
   photoUploadError,
   photoRenderFailed,
   newPersonalRecords,
+  syncWarning,
+  syncRetrying,
   onTitleChange,
   onSportChange,
   onPhotoRenderError,
   onCamera,
   onLibrary,
+  onRetrySync,
   onClose
 }: {
   activity: Activity | null;
@@ -1043,11 +1131,14 @@ const PostActivityModal = ({
   photoUploadError: string | null;
   photoRenderFailed: boolean;
   newPersonalRecords: PersonalRecord[];
+  syncWarning: PostSaveSyncWarning | null;
+  syncRetrying: boolean;
   onTitleChange: (value: string) => void;
   onSportChange: (type: ActivityType) => void;
   onPhotoRenderError: () => void;
   onCamera: () => void;
   onLibrary: () => void;
+  onRetrySync: () => void;
   onClose: () => void;
 }) => {
   const insets = useSafeAreaInsets();
@@ -1057,7 +1148,7 @@ const PostActivityModal = ({
   const hasRoute = Boolean(activity?.route?.length);
   const hasPhoto = Boolean(photoUri && !photoRenderFailed);
   const elevation = elevationGainMeters(activity?.route);
-  const sportEditingDisabled = uploading || titleSaving || sportSaving;
+  const sportEditingDisabled = uploading || titleSaving || sportSaving || syncRetrying;
 
   useEffect(() => {
     setMediaTab(hasRoute ? 'map' : hasPhoto ? 'photo' : 'map');
@@ -1074,7 +1165,9 @@ const PostActivityModal = ({
   };
 
   return (
-    <Modal visible={Boolean(activity)} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={Boolean(activity)} animationType="slide" onRequestClose={() => {
+      if (!syncRetrying) onClose();
+    }}>
       <SafeAreaView style={styles.postSafeArea} edges={['top', 'right', 'bottom', 'left']}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -1104,7 +1197,7 @@ const PostActivityModal = ({
                     {ACTIVITY_LABELS[activity.type]} - {new Date(activity.completedAt).toLocaleString()}
                   </AppText>
                 </View>
-                <Pressable onPress={onClose} style={styles.iconButton}>
+                <Pressable onPress={onClose} disabled={syncRetrying} style={[styles.iconButton, syncRetrying && styles.disabled]}>
                   <Ionicons name="close" size={22} color={colors.text} />
                 </Pressable>
               </View>
@@ -1164,6 +1257,27 @@ const PostActivityModal = ({
                 <View style={styles.photoError}>
                   <Ionicons name="warning-outline" size={18} color={colors.warning} />
                   <AppText style={styles.photoErrorText}>{photoUploadError}</AppText>
+                </View>
+              )}
+              {syncWarning?.activityId === activity.id && (
+                <View style={styles.postSyncWarning}>
+                  <Ionicons name="cloud-offline-outline" size={20} color={colors.warning} />
+                  <View style={{ flex: 1, gap: spacing.xxs }}>
+                    <AppText style={styles.postSyncWarningTitle}>Activity saved - sync needs attention</AppText>
+                    <AppText variant="caption" muted numberOfLines={3}>
+                      {syncWarning.messages.join(' ')}
+                    </AppText>
+                  </View>
+                  <Pressable
+                    onPress={onRetrySync}
+                    disabled={syncRetrying}
+                    style={[styles.postSyncRetry, syncRetrying && styles.disabled]}
+                  >
+                    <Ionicons name="refresh" size={16} color={colors.primary} />
+                    <AppText variant="caption" style={styles.postSyncRetryText}>
+                      {syncRetrying ? 'Retrying' : 'Retry'}
+                    </AppText>
+                  </Pressable>
                 </View>
               )}
 
@@ -1236,15 +1350,15 @@ const PostActivityModal = ({
             <RewardBreakdown activity={activity} fallbackRecords={newPersonalRecords} />
 
             <View style={styles.postActions}>
-              <PrimaryButton label={uploading ? 'Uploading...' : 'Take photo'} onPress={onCamera} disabled={uploading || titleSaving || sportSaving} />
+              <PrimaryButton label={uploading ? 'Uploading...' : 'Take photo'} onPress={onCamera} disabled={uploading || titleSaving || sportSaving || syncRetrying} />
               <PrimaryButton
                 label={uploading ? 'Uploading...' : 'Choose from library'}
                 variant="secondary"
                 onPress={onLibrary}
-                disabled={uploading || titleSaving || sportSaving}
+                disabled={uploading || titleSaving || sportSaving || syncRetrying}
               />
-              <PrimaryButton label={titleSaving ? 'Saving...' : 'Save activity / Finish'} onPress={onClose} disabled={uploading || titleSaving || sportSaving} />
-              <PrimaryButton label={activity.photoUrl ? 'Done' : 'Skip'} variant="secondary" onPress={onClose} disabled={uploading || titleSaving || sportSaving} />
+              <PrimaryButton label={titleSaving ? 'Saving...' : 'Save activity / Finish'} onPress={onClose} disabled={uploading || titleSaving || sportSaving || syncRetrying} />
+              <PrimaryButton label={activity.photoUrl ? 'Done' : 'Skip'} variant="secondary" onPress={onClose} disabled={uploading || titleSaving || sportSaving || syncRetrying} />
             </View>
             </ScrollView>
           )}
@@ -1791,6 +1905,37 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.warning,
     fontWeight: '700'
+  },
+  postSyncWarning: {
+    minHeight: 74,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    backgroundColor: 'rgba(255, 184, 77, 0.08)',
+    padding: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm
+  },
+  postSyncWarningTitle: {
+    color: colors.warning,
+    fontWeight: '900'
+  },
+  postSyncRetry: {
+    minHeight: 38,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+    paddingHorizontal: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs
+  },
+  postSyncRetryText: {
+    color: colors.primary,
+    fontWeight: '900'
   },
   postPhoto: {
     width: '100%',

@@ -45,6 +45,7 @@ Apply these additive migrations in filename order for an existing Supabase proje
 9. `202606210001_character_poses_evolution.sql`
 10. `202606210002_fitness_classes.sql`
 11. `202606210003_mission_skill_tree.sql`
+12. `202606210004_fix_progression_rpc_ambiguity.sql`
 
 All Wave 2 migrations are additive. They preserve existing activities, progression, inventory, and equipped cosmetics.
 
