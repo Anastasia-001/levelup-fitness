@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import { AppText } from '@/components/AppText';
 import { AvatarPreview } from '@/components/AvatarPreview';
 import { CosmeticThumbnail, RARITY_COLORS } from '@/components/CosmeticThumbnail';
@@ -39,6 +40,7 @@ const statRows = [
 type WardrobeCategory = CosmeticCategory | 'poses';
 
 export default function CharacterScreen() {
+  const router = useRouter();
   const storedCharacter = useAppStore((state) => state.character);
   const storedProfile = useAppStore((state) => state.profile);
   const accountBootstrap = useAppStore((state) => state.accountBootstrap);
@@ -153,6 +155,15 @@ export default function CharacterScreen() {
         >
           <Ionicons name={fitnessClass.icon} size={13} color={fitnessClass.accent} />
           <AppText variant="caption" style={{ color: fitnessClass.accent }}>{fitnessClass.name}</AppText>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open Skill Tree"
+          hitSlop={10}
+          onPress={() => router.push('/skill-tree')}
+          style={({ pressed }) => [styles.skillTreeButton, pressed && styles.skillTreeButtonPressed]}
+        >
+          <Ionicons name="git-branch-outline" size={27} color={colors.primary} />
         </Pressable>
         <Pressable onPress={() => setCustomizing(true)} style={({ pressed }) => [styles.wardrobeButton, pressed && styles.pressed]}>
           <Ionicons name="shirt-outline" size={18} color={colors.primary} />
@@ -651,6 +662,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs
+  },
+  skillTreeButton: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.md,
+    zIndex: 12,
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(3, 7, 19, 0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: colors.primary,
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4
+  },
+  skillTreeButtonPressed: {
+    opacity: 0.86,
+    transform: [{ scale: 0.96 }]
   },
   statsGrid: {
     flexDirection: 'row',
