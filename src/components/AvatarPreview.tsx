@@ -1,7 +1,14 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { CHARACTER_ASSETS, CharacterAsset, CharacterPose, POSE_PRESENTATIONS } from '@/constants/characterAssets';
-import { getEvolutionStage } from '@/constants/characterProgression';
+import {
+  CharacterAsset,
+  CharacterPose,
+  FALLBACK_CHARACTER_ASSET,
+  POSE_PRESENTATIONS,
+  resolveCharacterAsset
+} from '@/constants/characterAssets';
+import { resolveEvolutionStage } from '@/constants/characterProgression';
 import { colors, shadows } from '@/constants/theme';
 import { getEquippedItems } from '@/services/cosmeticService';
 import { CosmeticItem, EquippedCosmetics, EvolutionStageId } from '@/types/domain';
@@ -10,51 +17,180 @@ type AvatarPreviewProps = {
   equipment: EquippedCosmetics | null;
   size?: 'large' | 'wardrobe' | 'small';
   height?: number;
-  pose?: CharacterPose;
-  evolutionStage?: EvolutionStageId;
+  level?: number;
+  pose?: CharacterPose | string | null;
+  evolutionStage?: EvolutionStageId | string | null;
 };
 
 const SIZE_HEIGHTS = { large: 470, wardrobe: 280, small: 220 } as const;
+const loggedFallbacks = new Set<string>();
+let fallbackPreloadStarted = false;
 
 export const AvatarPreview = ({
   equipment,
   size = 'large',
   height,
+  level,
   pose = 'neutral',
   evolutionStage = 'starter'
 }: AvatarPreviewProps) => {
   const equipped = getEquippedItems(equipment);
-  const asset = CHARACTER_ASSETS[pose];
-  const posePresentation = POSE_PRESENTATIONS[pose];
-  const stage = getEvolutionStage(evolutionStage);
+  const poseResolution = useMemo(() => resolveCharacterAsset(pose), [pose]);
+  const stageResolution = useMemo(
+    () => resolveEvolutionStage(level, evolutionStage),
+    [evolutionStage, level]
+  );
+  const requestedAsset = poseResolution.asset;
+  const requestedAssetKey = assetKey(requestedAsset);
+  const [activeAsset, setActiveAsset] = useState<CharacterAsset>(FALLBACK_CHARACTER_ASSET);
+  const [activeAssetReady, setActiveAssetReady] = useState(false);
+  const [pendingAsset, setPendingAsset] = useState<CharacterAsset | null>(null);
+  const activeAssetKey = assetKey(activeAsset);
+  const posePresentation = POSE_PRESENTATIONS[poseResolution.resolvedPose] ?? POSE_PRESENTATIONS.neutral;
+  const stage = stageResolution.resolvedStage;
   const stageHeight = height ?? SIZE_HEIGHTS[size];
-  const artWidth = stageHeight * (asset.canvas.width / asset.canvas.height);
+  const artWidth = stageHeight * (activeAsset.canvas.width / activeAsset.canvas.height);
   const stageWidth = Math.max(170, stageHeight * 0.54);
+
+  useEffect(() => {
+    preloadFallbackAsset();
+  }, []);
+
+  useEffect(() => {
+    if (requestedAssetKey === activeAssetKey) {
+      setPendingAsset(null);
+      return;
+    }
+    setPendingAsset(requestedAsset);
+  }, [activeAssetKey, requestedAsset, requestedAssetKey]);
+
+  useEffect(() => {
+    const fallbackReason = [poseResolution.fallbackReason, stageResolution.fallbackReason]
+      .filter(Boolean)
+      .join(', ');
+    if (!fallbackReason) return;
+    logCharacterFallback({
+      requestedStage: stageResolution.requestedStage,
+      resolvedStage: stage.id,
+      requestedPose: poseResolution.requestedPose,
+      resolvedPose: poseResolution.resolvedPose,
+      fallbackReason
+    });
+  }, [poseResolution, stage.id, stageResolution]);
+
+  const handleActiveAssetError = () => {
+    logCharacterFallback({
+      requestedStage: stageResolution.requestedStage,
+      resolvedStage: stage.id,
+      requestedPose: poseResolution.requestedPose,
+      resolvedPose: poseResolution.resolvedPose,
+      fallbackReason: activeAssetKey === assetKey(FALLBACK_CHARACTER_ASSET)
+        ? 'starter-fallback-image-failed-to-load'
+        : 'selected-character-image-failed-to-load'
+    });
+    setActiveAssetReady(false);
+    setPendingAsset(null);
+    if (activeAssetKey !== assetKey(FALLBACK_CHARACTER_ASSET)) {
+      setActiveAsset(FALLBACK_CHARACTER_ASSET);
+    }
+  };
+
+  const handlePendingAssetLoaded = () => {
+    if (!pendingAsset || assetKey(pendingAsset) !== requestedAssetKey) return;
+    setActiveAsset(pendingAsset);
+    setActiveAssetReady(true);
+    setPendingAsset(null);
+  };
+
+  const handlePendingAssetError = () => {
+    logCharacterFallback({
+      requestedStage: stageResolution.requestedStage,
+      resolvedStage: stage.id,
+      requestedPose: poseResolution.requestedPose,
+      resolvedPose: poseResolution.resolvedPose,
+      fallbackReason: 'replacement-character-image-failed-to-load'
+    });
+    setPendingAsset(null);
+    if (!activeAssetReady) setActiveAsset(FALLBACK_CHARACTER_ASSET);
+  };
 
   return (
     <View
       style={[styles.stage, { width: stageWidth, height: stageHeight }]}
       accessibilityLabel="LevelUp Fitness character wearing equipped cosmetics"
     >
-      <Atmosphere aura={equipped.aura} frame={equipped.frame} stageColor={stage.sceneColor} poseAccent={posePresentation.accent} />
+      {activeAssetReady && (
+        <Atmosphere aura={equipped.aura} frame={equipped.frame} stageColor={stage.sceneColor} poseAccent={posePresentation.accent} />
+      )}
       <View
         style={[
           styles.artboard,
           { width: artWidth, height: stageHeight, transform: [...posePresentation.transform, { scale: stage.postureScale }] }
         ]}
       >
-        <Image source={asset.source} resizeMode="contain" fadeDuration={0} style={styles.characterArt} />
-        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          <EvolutionBaseTrim color={stage.trimColor} stage={stage.id} torso={asset.anchors.torso} legs={asset.anchors.legs} />
-          <HeadwearOverlay item={equipped.head} anchor={asset.anchors.head} />
-          <TopOverlay item={equipped.shirt} anchor={asset.anchors.torso} />
-          <BottomOverlay item={equipped.pants} waist={asset.anchors.waist} legs={asset.anchors.legs} />
-          <ShoeOverlay item={equipped.shoes} anchor={asset.anchors.shoes} />
-          <AccessoryOverlay item={equipped.accessory} anchor={asset.anchors.wrist} />
-        </View>
+        <Image
+          source={activeAsset.source}
+          resizeMode="contain"
+          fadeDuration={0}
+          onLoad={() => setActiveAssetReady(true)}
+          onError={handleActiveAssetError}
+          style={styles.characterArt}
+        />
+        {pendingAsset && (
+          <Image
+            source={pendingAsset.source}
+            resizeMode="contain"
+            fadeDuration={0}
+            onLoad={handlePendingAssetLoaded}
+            onError={handlePendingAssetError}
+            style={styles.characterPreloader}
+          />
+        )}
+        {activeAssetReady && (
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            <EvolutionBaseTrim color={stage.trimColor} stage={stage.id} torso={activeAsset.anchors.torso} legs={activeAsset.anchors.legs} />
+            <HeadwearOverlay item={equipped.head} anchor={activeAsset.anchors.head} />
+            <TopOverlay item={equipped.shirt} anchor={activeAsset.anchors.torso} />
+            <BottomOverlay item={equipped.pants} waist={activeAsset.anchors.waist} legs={activeAsset.anchors.legs} />
+            <ShoeOverlay item={equipped.shoes} anchor={activeAsset.anchors.shoes} />
+            <AccessoryOverlay item={equipped.accessory} anchor={activeAsset.anchors.wrist} />
+          </View>
+        )}
       </View>
     </View>
   );
+};
+
+const assetKey = (asset: CharacterAsset) =>
+  Image.resolveAssetSource(asset.source)?.uri ?? String(asset.source);
+
+const preloadFallbackAsset = () => {
+  if (fallbackPreloadStarted) return;
+  fallbackPreloadStarted = true;
+  const uri = assetKey(FALLBACK_CHARACTER_ASSET);
+  void Image.prefetch(uri).catch(() => {
+    logCharacterFallback({
+      requestedStage: 'starter',
+      resolvedStage: 'starter',
+      requestedPose: 'neutral',
+      resolvedPose: 'neutral',
+      fallbackReason: 'starter-fallback-preload-failed'
+    });
+  });
+};
+
+const logCharacterFallback = (details: {
+  requestedStage: string;
+  resolvedStage: string;
+  requestedPose: string;
+  resolvedPose: string;
+  fallbackReason: string;
+}) => {
+  if (!__DEV__) return;
+  const key = JSON.stringify(details);
+  if (loggedFallbacks.has(key)) return;
+  loggedFallbacks.add(key);
+  console.warn('[LevelUp] Character asset fallback', details);
 };
 
 const Atmosphere = ({
@@ -253,6 +389,7 @@ const styles = StyleSheet.create({
   stage: { alignItems: 'center', justifyContent: 'center', overflow: 'visible' },
   artboard: { position: 'relative' },
   characterArt: { width: '100%', height: '100%' },
+  characterPreloader: { position: 'absolute', width: 1, height: 1, opacity: 0 },
   anchor: { position: 'absolute' },
   atmosphereGlow: { position: 'absolute', top: '4%', left: '4%', right: '4%', bottom: '5%', borderRadius: 120 },
   poseAccent: { position: 'absolute', bottom: '7%', left: '23%', right: '23%', height: 8, borderRadius: 20, transform: [{ scaleX: 1.5 }] },

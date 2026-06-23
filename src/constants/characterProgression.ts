@@ -1,4 +1,4 @@
-import {
+import type {
   CharacterPoseDefinition,
   CharacterPoseId,
   EvolutionStageDefinition,
@@ -64,6 +64,28 @@ export const getEvolutionStageForLevel = (level: number) =>
 
 export const getEvolutionStage = (id?: EvolutionStageId | null) =>
   EVOLUTION_STAGES.find((stage) => stage.id === id) ?? EVOLUTION_STAGES[0];
+
+export const resolveEvolutionStage = (level?: number | null, requestedId?: string | null) => {
+  const requestedStage = EVOLUTION_STAGES.find((stage) => stage.id === requestedId);
+  const safeLevel = Number.isFinite(level) ? Math.max(1, Math.floor(level ?? 1)) : 1;
+  const resolvedStage = level === undefined || level === null
+    ? requestedStage ?? EVOLUTION_STAGES[0]
+    : getEvolutionStageForLevel(safeLevel);
+  const highestStage = EVOLUTION_STAGES[EVOLUTION_STAGES.length - 1];
+  const fallbackReason = requestedId && !requestedStage
+    ? 'unsupported-evolution-stage'
+    : safeLevel > highestStage.minimumLevel && resolvedStage.id === highestStage.id
+      ? 'level-clamped-to-highest-supported-stage'
+      : requestedStage && requestedStage.id !== resolvedStage.id
+        ? 'stored-stage-does-not-match-current-level'
+        : null;
+
+  return {
+    requestedStage: requestedId ?? 'starter',
+    resolvedStage,
+    fallbackReason
+  };
+};
 
 export const getPoseDefinition = (id?: CharacterPoseId | null) =>
   CHARACTER_POSES.find((pose) => pose.id === id) ?? CHARACTER_POSES[0];

@@ -728,6 +728,10 @@ export type Database = {
         Args: { p_level: number };
         Returns: Database['public']['Tables']['level_up_celebrations']['Row'];
       };
+      mark_level_up_batch_viewed: {
+        Args: { p_first_level: number; p_final_level: number };
+        Returns: number;
+      };
       reroll_daily_mission: {
         Args: { p_mission_id: string; p_replacement: unknown };
         Returns: Database['public']['Tables']['missions']['Row'];

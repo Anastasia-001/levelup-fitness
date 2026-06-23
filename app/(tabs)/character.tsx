@@ -9,7 +9,7 @@ import { FitnessClassPicker } from '@/components/FitnessClassPicker';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { Screen } from '@/components/Screen';
 import { CATEGORY_LABELS, COSMETIC_CATEGORIES, visibleCosmeticsForCategory } from '@/constants/cosmetics';
-import { CHARACTER_POSES, getEvolutionStage } from '@/constants/characterProgression';
+import { CHARACTER_POSES, resolveEvolutionStage } from '@/constants/characterProgression';
 import { getFitnessClass, getStatTitle } from '@/constants/fitnessClasses';
 import { colors, radii, shadows, spacing } from '@/constants/theme';
 import { supabase } from '@/lib/supabase';
@@ -59,7 +59,7 @@ export default function CharacterScreen() {
   const addOwnedCosmetic = useAppStore((state) => state.addOwnedCosmetic);
   const { height: screenHeight } = useWindowDimensions();
   const avatarHeight = Math.min(520, Math.max(340, screenHeight - 320));
-  const evolution = getEvolutionStage(presentation?.highestEvolutionStage);
+  const evolution = resolveEvolutionStage(character?.level, presentation?.highestEvolutionStage).resolvedStage;
   const fitnessClass = getFitnessClass(presentation?.fitnessClass);
 
   const chooseFitnessClass = async (nextClass: Parameters<typeof setFitnessClass>[0]) => {
@@ -136,6 +136,7 @@ export default function CharacterScreen() {
           <AvatarPreview
             equipment={equippedCosmetics}
             height={avatarHeight}
+            level={character.level}
             pose={presentation?.equippedPose}
             evolutionStage={presentation?.highestEvolutionStage}
           />
@@ -177,7 +178,6 @@ export default function CharacterScreen() {
                 </AppText>
               </View>
               <AppText variant="caption" numberOfLines={1} style={styles.statTitle}>{title.current.title}</AppText>
-              {title.next && <AppText variant="caption" muted numberOfLines={1}>Next: Lv {title.next.minimumLevel}</AppText>}
               <MiniProgress value={(exp % 100) / 100} />
             </View>
           );
@@ -292,6 +292,7 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
             <AvatarPreview
               equipment={equippedCosmetics}
               height={Math.min(280, previewHeight - spacing.sm)}
+              level={character?.level ?? 1}
               pose={presentation?.equippedPose}
               evolutionStage={presentation?.highestEvolutionStage}
             />
@@ -333,6 +334,7 @@ const WardrobeModal = ({ visible, onClose }: { visible: boolean; onClose: () => 
                     <AvatarPreview
                       equipment={equippedCosmetics}
                       height={132}
+                      level={character?.level ?? 1}
                       pose={pose.id}
                       evolutionStage={presentation?.highestEvolutionStage}
                     />

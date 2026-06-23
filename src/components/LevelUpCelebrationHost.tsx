@@ -1,21 +1,23 @@
 import { useState } from 'react';
 import { Alert } from 'react-native';
 import { LevelUpCelebration } from '@/components/LevelUpCelebration';
-import { markLevelUpViewed } from '@/services/levelUpService';
+import { listPendingLevelUps, markLevelUpBatchViewed } from '@/services/levelUpService';
 import { useAppStore } from '@/store/appStore';
+import { buildLevelUpBatch } from '@/utils/levelUpBatch';
 
 export const LevelUpCelebrationHost = () => {
   const pendingLevelUps = useAppStore((state) => state.pendingLevelUps);
-  const removePendingLevelUp = useAppStore((state) => state.removePendingLevelUp);
+  const setPendingLevelUps = useAppStore((state) => state.setPendingLevelUps);
   const [saving, setSaving] = useState(false);
-  const activeCelebration = pendingLevelUps[0] ?? null;
+  const batch = buildLevelUpBatch(pendingLevelUps);
+  const activeCelebration = batch?.celebration ?? null;
 
   const continueFromLevel = async () => {
-    if (!activeCelebration || saving) return;
+    if (!activeCelebration || !batch || saving) return;
     setSaving(true);
     try {
-      await markLevelUpViewed(activeCelebration.level);
-      removePendingLevelUp(activeCelebration.level);
+      await markLevelUpBatchViewed(batch.firstLevel, batch.finalLevel);
+      setPendingLevelUps(await listPendingLevelUps(activeCelebration.userId));
     } catch (caught) {
       Alert.alert(
         'Could not finish celebration',
@@ -32,11 +34,6 @@ export const LevelUpCelebrationHost = () => {
       celebration={activeCelebration}
       onContinue={continueFromLevel}
       busy={saving}
-      queueLabel={
-        pendingLevelUps.length > 1
-          ? `${pendingLevelUps.length} level ups queued`
-          : undefined
-      }
     />
   );
 };

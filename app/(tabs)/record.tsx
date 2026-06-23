@@ -1770,34 +1770,28 @@ const RewardBreakdown = ({
   fallbackRecords: PersonalRecord[];
 }) => {
   const summary = activity.rewardSummary;
-  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [levelPreviewVisible, setLevelPreviewVisible] = useState(false);
   const records = summary?.personalRecords.length
     ? summary.personalRecords
     : fallbackRecords.map((record) => ({ recordType: record.recordType, sportKey: record.sportKey }));
-  const levelCelebrations: LevelUpCelebrationModel[] =
+  const levelCelebration: LevelUpCelebrationModel | null =
     summary?.levelBefore !== null &&
     summary?.levelBefore !== undefined &&
     summary.levelAfter !== null &&
     summary.levelAfter !== undefined &&
     summary.levelAfter > summary.levelBefore
-      ? Array.from({ length: summary.levelAfter - summary.levelBefore }, (_, index) => ({
+      ? {
           userId: activity.userId,
-          previousLevel: summary.levelBefore! + index,
-          level: summary.levelBefore! + index + 1,
+          previousLevel: summary.levelBefore,
+          level: summary.levelAfter,
           queuedAt: summary.processedAt,
           viewedAt: null
-        }))
-      : [];
-  const previewCelebration = previewIndex === null ? null : levelCelebrations[previewIndex] ?? null;
+        }
+      : null;
 
   useEffect(() => {
-    setPreviewIndex(null);
+    setLevelPreviewVisible(false);
   }, [activity.id]);
-
-  const continuePreview = () => {
-    if (previewIndex === null) return;
-    setPreviewIndex(previewIndex + 1 < levelCelebrations.length ? previewIndex + 1 : null);
-  };
 
   return (
     <>
@@ -1827,8 +1821,8 @@ const RewardBreakdown = ({
               ))}
             </View>
 
-            {levelCelebrations.length > 0 && (
-              <Pressable onPress={() => setPreviewIndex(0)} style={styles.levelReward}>
+            {levelCelebration && (
+              <Pressable onPress={() => setLevelPreviewVisible(true)} style={styles.levelReward}>
                 <Ionicons name="star" size={20} color={colors.warning} />
                 <View style={{ flex: 1 }}>
                   <AppText style={styles.levelRewardText}>Level Up: {summary.levelBefore} to {summary.levelAfter}</AppText>
@@ -1879,14 +1873,9 @@ const RewardBreakdown = ({
       </View>
 
       <LevelUpCelebration
-        visible={Boolean(previewCelebration)}
-        celebration={previewCelebration}
-        onContinue={continuePreview}
-        queueLabel={
-          levelCelebrations.length > 1 && previewIndex !== null
-            ? `${previewIndex + 1} of ${levelCelebrations.length} level ups`
-            : undefined
-        }
+        visible={levelPreviewVisible && Boolean(levelCelebration)}
+        celebration={levelCelebration}
+        onContinue={() => setLevelPreviewVisible(false)}
         additionalUnlocks={summary?.achievementsUnlocked.map((achievement) => achievement.title) ?? []}
       />
     </>

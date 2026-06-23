@@ -1,5 +1,5 @@
 import { DimensionValue, ImageSourcePropType, ViewStyle } from 'react-native';
-import { CharacterPoseId } from '@/types/domain';
+import type { CharacterPoseId } from '@/types/domain';
 
 export type CharacterPose = CharacterPoseId;
 
@@ -29,7 +29,7 @@ type Anchor = {
   height: DimensionValue;
 };
 
-const BASE_CHARACTER_ASSET: CharacterAsset = {
+export const FALLBACK_CHARACTER_ASSET: CharacterAsset = {
   source: require('../../assets/characters/levelup-starter.png'),
   canvas: { width: 505, height: 1821 },
   anchors: {
@@ -43,12 +43,12 @@ const BASE_CHARACTER_ASSET: CharacterAsset = {
 };
 
 export const CHARACTER_ASSETS: Record<CharacterPose, CharacterAsset> = {
-  neutral: BASE_CHARACTER_ASSET,
-  ready_to_run: BASE_CHARACTER_ASSET,
-  stretch: BASE_CHARACTER_ASSET,
-  post_workout_victory: BASE_CHARACTER_ASSET,
-  recovery: BASE_CHARACTER_ASSET,
-  confident: BASE_CHARACTER_ASSET
+  neutral: FALLBACK_CHARACTER_ASSET,
+  ready_to_run: FALLBACK_CHARACTER_ASSET,
+  stretch: FALLBACK_CHARACTER_ASSET,
+  post_workout_victory: FALLBACK_CHARACTER_ASSET,
+  recovery: FALLBACK_CHARACTER_ASSET,
+  confident: FALLBACK_CHARACTER_ASSET
 };
 
 export const POSE_PRESENTATIONS: Record<CharacterPose, PosePresentation> = {
@@ -59,3 +59,17 @@ export const POSE_PRESENTATIONS: Record<CharacterPose, PosePresentation> = {
   recovery: { transform: [{ translateY: 5 }, { rotate: '1.3deg' }, { scale: 0.985 }], accent: '#A8B7CB', postureLabel: 'Cooldown stance' },
   confident: { transform: [{ translateY: -3 }, { scale: 1.035 }], accent: '#8F5CFF', postureLabel: 'Confident stance' }
 };
+
+export const resolveCharacterAsset = (requestedPose?: string | null) => {
+  const resolvedPose = isCharacterPose(requestedPose) ? requestedPose : 'neutral';
+  const asset = CHARACTER_ASSETS[resolvedPose] ?? FALLBACK_CHARACTER_ASSET;
+  return {
+    requestedPose: requestedPose ?? 'neutral',
+    resolvedPose,
+    asset,
+    fallbackReason: !isCharacterPose(requestedPose) && requestedPose ? 'unsupported-pose' : null
+  };
+};
+
+export const isCharacterPose = (value?: string | null): value is CharacterPose =>
+  Boolean(value && Object.prototype.hasOwnProperty.call(CHARACTER_ASSETS, value));

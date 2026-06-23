@@ -21,7 +21,6 @@ type LevelUpCelebrationProps = {
   celebration: LevelUpCelebrationModel | null;
   onContinue: () => void;
   additionalUnlocks?: string[];
-  queueLabel?: string;
   busy?: boolean;
 };
 
@@ -30,7 +29,6 @@ export const LevelUpCelebration = ({
   celebration,
   onContinue,
   additionalUnlocks = [],
-  queueLabel,
   busy = false
 }: LevelUpCelebrationProps) => {
   const reduceMotion = useReducedMotion();
@@ -47,20 +45,27 @@ export const LevelUpCelebration = ({
   }, [celebration]);
   const unlocks = useMemo(() => {
     if (!celebration) return additionalUnlocks;
-    const levelUnlocks = COSMETICS.filter((item) =>
-      item.unlockSource.type === 'shop'
-        ? item.unlockLevel === celebration.level
-        : item.unlockSource.type === 'achievement' && item.unlockSource.id === `character_level_${celebration.level}`
-    ).map((item) =>
+    const crossedLevel = (level: number) =>
+      level > celebration.previousLevel && level <= celebration.level;
+    const levelUnlocks = COSMETICS.filter((item) => {
+      if (item.unlockSource.type === 'shop') return crossedLevel(item.unlockLevel ?? 1);
+      if (item.unlockSource.type !== 'achievement') return false;
+      const match = item.unlockSource.id.match(/^character_level_(\d+)$/);
+      return match ? crossedLevel(Number(match[1])) : false;
+    }).map((item) =>
       item.unlockSource.type === 'achievement'
         ? `Cosmetic earned: ${item.name}`
         : `Shop item available: ${item.name}`
     );
     const stageUnlocks = evolutionStage ? [`Evolution stage: ${evolutionStage.name}`] : [];
-    const skillUnlocks = SKILL_POINT_LEVELS.includes(celebration.level as typeof SKILL_POINT_LEVELS[number])
-      ? ['Skill point earned']
+    const skillPointCount = SKILL_POINT_LEVELS.filter(crossedLevel).length;
+    const skillUnlocks = skillPointCount
+      ? [`${skillPointCount === 1 ? 'Skill point' : `${skillPointCount} skill points`} earned`]
       : [];
-    return [...new Set([...additionalUnlocks, ...stageUnlocks, ...skillUnlocks, ...levelUnlocks])];
+    const uniqueUnlocks = [...new Set([...additionalUnlocks, ...stageUnlocks, ...skillUnlocks, ...levelUnlocks])];
+    return uniqueUnlocks.length > 6
+      ? [...uniqueUnlocks.slice(0, 5), `${uniqueUnlocks.length - 5} more rewards unlocked`]
+      : uniqueUnlocks;
   }, [additionalUnlocks, celebration, evolutionStage]);
 
   useEffect(() => {
@@ -113,16 +118,19 @@ export const LevelUpCelebration = ({
   });
 
   return (
-    <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={() => undefined}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      statusBarTranslucent
+      onRequestClose={() => {
+        if (!busy) onContinue();
+      }}
+    >
       <SafeAreaView style={styles.safeArea}>
         <Animated.View style={[styles.backdrop, { opacity }]}>
           <Animated.View style={[styles.panel, { transform: [{ scale }] }]}>
             <View style={styles.topRule} />
-            {queueLabel && (
-              <AppText variant="caption" muted style={styles.queueLabel}>
-                {queueLabel}
-              </AppText>
-            )}
 
             <View style={styles.levelIcon}>
               <Ionicons name="sparkles" size={32} color={colors.primary} />
@@ -221,9 +229,6 @@ const styles = StyleSheet.create({
     right: 0,
     height: 4,
     backgroundColor: colors.secondary
-  },
-  queueLabel: {
-    alignSelf: 'flex-end'
   },
   levelIcon: {
     width: 66,
