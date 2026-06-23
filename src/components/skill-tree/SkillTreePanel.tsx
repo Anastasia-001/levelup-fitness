@@ -157,12 +157,13 @@ const SkillTreeHub = ({
   availablePoints: number;
   onSelectBranch: (branch: SkillBranch) => void;
 }) => {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const layoutWidth = Math.min(620, Math.max(300, width - spacing.md * 2));
-  const circleSize = Math.max(104, Math.min(138, layoutWidth * 0.34));
-  const hubHeight = circleSize * 2.7;
-  const sideTop = circleSize * 0.86;
-  const bottomTop = circleSize * 1.72;
+  const circleSize = Math.max(104, Math.min(132, layoutWidth * 0.31));
+  const hubHeight = circleSize * 3.2;
+  const stageWrapMinHeight = Math.max(hubHeight + spacing.xl, height - 260);
+  const sideTop = circleSize * 1.08;
+  const bottomTop = circleSize * 2.16;
   const centerSize = Math.max(82, circleSize * 0.72);
   const centerLeft = (layoutWidth - centerSize) / 2;
   const centerTop = (hubHeight - centerSize) / 2;
@@ -181,26 +182,28 @@ const SkillTreeHub = ({
         <AppText variant="subtitle">Choose a path to inspect and unlock skills.</AppText>
       </View>
 
-      <View style={[styles.diamondStage, { width: layoutWidth, height: hubHeight }]}>
-        <View style={[styles.centerLine, styles.centerLineVertical, { top: circleSize * 0.58, left: layoutWidth / 2 - 1, height: hubHeight - circleSize * 1.16 }]} />
-        <View style={[styles.centerLine, styles.centerLineLeft, { top: centerTop + centerSize / 2, left: circleSize * 0.82, width: centerLeft - circleSize * 0.42 }]} />
-        <View style={[styles.centerLine, styles.centerLineRight, { top: centerTop + centerSize / 2, right: circleSize * 0.82, width: centerLeft - circleSize * 0.42 }]} />
-        <View style={[styles.centerOrb, { width: centerSize, height: centerSize, borderRadius: centerSize / 2, left: centerLeft, top: centerTop }]}>
-          <View pointerEvents="none" style={styles.centerGlow} />
-          <Ionicons name="sparkles" size={20} color={colors.coin} />
-          <AppText style={styles.centerPoints}>{availablePoints}</AppText>
-          <AppText variant="caption" muted style={styles.centerLabel}>Skill Points</AppText>
-        </View>
+      <View style={[styles.diamondStageWrap, { minHeight: stageWrapMinHeight }]}>
+        <View style={[styles.diamondStage, { width: layoutWidth, height: hubHeight }]}>
+          <View style={[styles.centerLine, styles.centerLineVertical, { top: circleSize * 0.58, left: layoutWidth / 2 - 1, height: hubHeight - circleSize * 1.16 }]} />
+          <View style={[styles.centerLine, styles.centerLineLeft, { top: centerTop + centerSize / 2, left: circleSize * 0.82, width: centerLeft - circleSize * 0.42 }]} />
+          <View style={[styles.centerLine, styles.centerLineRight, { top: centerTop + centerSize / 2, right: circleSize * 0.82, width: centerLeft - circleSize * 0.42 }]} />
+          <View style={[styles.centerOrb, { width: centerSize, height: centerSize, borderRadius: centerSize / 2, left: centerLeft, top: centerTop }]}>
+            <View pointerEvents="none" style={styles.centerGlow} />
+            <Ionicons name="sparkles" size={20} color={colors.coin} />
+            <AppText style={styles.centerPoints}>{availablePoints}</AppText>
+            <AppText variant="caption" muted style={styles.centerLabel}>Skill Points</AppText>
+          </View>
 
-        {branches.map((branch) => (
-          <BranchCircle
-            key={`skill-hub-${branch.id}`}
-            branch={branch}
-            size={circleSize}
-            style={positions[branch.id]}
-            onPress={() => onSelectBranch(branch.id)}
-          />
-        ))}
+          {branches.map((branch) => (
+            <BranchCircle
+              key={`skill-hub-${branch.id}`}
+              branch={branch}
+              size={circleSize}
+              style={positions[branch.id]}
+              onPress={() => onSelectBranch(branch.id)}
+            />
+          ))}
+        </View>
       </View>
     </View>
   );
@@ -506,6 +509,13 @@ const styles = StyleSheet.create({
   diamondStage: {
     alignSelf: 'center',
     position: 'relative'
+  },
+  diamondStageWrap: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md
   },
   centerLine: {
     position: 'absolute',

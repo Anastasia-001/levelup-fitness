@@ -60,7 +60,7 @@ export default function CharacterScreen() {
   const setCharacterPresentation = useAppStore((state) => state.setCharacterPresentation);
   const addOwnedCosmetic = useAppStore((state) => state.addOwnedCosmetic);
   const { height: screenHeight } = useWindowDimensions();
-  const avatarHeight = Math.min(520, Math.max(340, screenHeight - 320));
+  const avatarHeight = Math.min(548, Math.max(348, screenHeight - 292));
   const evolution = resolveEvolutionStage(character?.level, presentation?.highestEvolutionStage).resolvedStage;
   const fitnessClass = getFitnessClass(presentation?.fitnessClass);
 
@@ -555,7 +555,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     overflow: 'hidden',
     marginHorizontal: -spacing.md,
-    paddingBottom: spacing.sm
+    paddingBottom: spacing.xxs
   },
   sceneAtmosphere: {
     position: 'absolute',
@@ -585,7 +585,7 @@ const styles = StyleSheet.create({
   },
   floorGlow: {
     position: 'absolute',
-    bottom: 54,
+    bottom: 44,
     width: 176,
     height: 25,
     borderRadius: 88,
@@ -627,7 +627,7 @@ const styles = StyleSheet.create({
   levelBadge: {
     position: 'absolute',
     right: '18%',
-    bottom: '11%',
+    bottom: '9%',
     borderRadius: radii.pill,
     backgroundColor: colors.primary,
     paddingHorizontal: spacing.sm,
@@ -641,7 +641,7 @@ const styles = StyleSheet.create({
   evolutionBadge: {
     position: 'absolute',
     left: '17%',
-    bottom: '11%',
+    bottom: '9%',
     borderRadius: radii.pill,
     borderWidth: 1,
     backgroundColor: 'rgba(3, 7, 19, 0.88)',
@@ -689,7 +689,8 @@ const styles = StyleSheet.create({
   statsGrid: {
     flexDirection: 'row',
     gap: spacing.xs,
-    flexShrink: 0
+    flexShrink: 0,
+    marginBottom: -spacing.sm
   },
   statCard: {
     width: '23.5%',
