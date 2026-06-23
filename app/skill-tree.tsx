@@ -35,13 +35,7 @@ export default function SkillTreeScreen() {
         </View>
       </View>
 
-      <View style={styles.introCard}>
-        <AppText muted>
-          Spend milestone points on insight, mission variety, cosmetics, and convenience. Progress is saved to your existing character.
-        </AppText>
-      </View>
-
-      <SkillTreePanel showIntroCard={false} />
+      <SkillTreePanel />
     </Screen>
   );
 }
@@ -85,12 +79,5 @@ const styles = StyleSheet.create({
   pointsText: {
     color: colors.coin,
     fontWeight: '900'
-  },
-  introCard: {
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.borderDim,
-    backgroundColor: colors.card,
-    padding: spacing.md
   }
 });
