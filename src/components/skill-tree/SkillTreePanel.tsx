@@ -159,11 +159,11 @@ const SkillTreeHub = ({
 }) => {
   const { width, height } = useWindowDimensions();
   const layoutWidth = Math.min(620, Math.max(300, width - spacing.md * 2));
-  const circleSize = Math.max(104, Math.min(132, layoutWidth * 0.31));
-  const hubHeight = circleSize * 3.2;
-  const stageWrapMinHeight = Math.max(hubHeight + spacing.xl, height - 260);
-  const sideTop = circleSize * 1.08;
-  const bottomTop = circleSize * 2.16;
+  const circleSize = Math.max(100, Math.min(128, layoutWidth * 0.3));
+  const hubHeight = circleSize * 3.32;
+  const stageWrapMinHeight = Math.max(hubHeight + spacing.xl, height - 280);
+  const sideTop = circleSize * 1.16;
+  const bottomTop = circleSize * 2.32;
   const centerSize = Math.max(82, circleSize * 0.72);
   const centerLeft = (layoutWidth - centerSize) / 2;
   const centerTop = (hubHeight - centerSize) / 2;
@@ -514,8 +514,8 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: spacing.lg,
-    paddingBottom: spacing.md
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.xl
   },
   centerLine: {
     position: 'absolute',

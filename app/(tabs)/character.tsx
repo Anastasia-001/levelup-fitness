@@ -690,7 +690,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.xs,
     flexShrink: 0,
-    marginBottom: -spacing.sm
+    marginBottom: -spacing.md
   },
   statCard: {
     width: '23.5%',
