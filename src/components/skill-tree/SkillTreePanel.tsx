@@ -157,17 +157,23 @@ const SkillTreeHub = ({
   availablePoints: number;
   onSelectBranch: (branch: SkillBranch) => void;
 }) => {
-  const { width, height } = useWindowDimensions();
+  const { width } = useWindowDimensions();
   const layoutWidth = Math.min(620, Math.max(300, width - spacing.md * 2));
-  const circleSize = Math.max(100, Math.min(128, layoutWidth * 0.3));
-  const hubHeight = circleSize * 3.32;
-  const stageWrapMinHeight = Math.max(hubHeight + spacing.xl, height - 280);
-  const sideTop = circleSize * 1.16;
-  const bottomTop = circleSize * 2.32;
-  const centerSize = Math.max(82, circleSize * 0.72);
+  const circleSize = Math.max(102, Math.min(124, layoutWidth * 0.29));
+  const hubHeight = circleSize * 3.56;
+  const stageWrapMinHeight = hubHeight + spacing.xxl;
+  const sideTop = circleSize * 1.28;
+  const bottomTop = circleSize * 2.56;
+  const centerSize = Math.max(64, Math.min(76, circleSize * 0.64));
   const centerLeft = (layoutWidth - centerSize) / 2;
   const centerTop = (hubHeight - centerSize) / 2;
-  const sideInset = Math.max(0, Math.min(44, (layoutWidth - circleSize * 2) / 5));
+  const sideInset = Math.max(0, Math.min(spacing.sm, (layoutWidth - 340) / 4));
+  const centerY = centerTop + centerSize / 2;
+  const leftConnectorStart = sideInset + circleSize + spacing.sm;
+  const leftConnectorWidth = Math.max(0, centerLeft - spacing.sm - leftConnectorStart);
+  const rightConnectorStart = centerLeft + centerSize + spacing.sm;
+  const rightConnectorEnd = layoutWidth - sideInset - circleSize - spacing.sm;
+  const rightConnectorWidth = Math.max(0, rightConnectorEnd - rightConnectorStart);
   const positions: Record<SkillBranch, ViewStyle> = {
     endurance: { top: 0, left: (layoutWidth - circleSize) / 2 },
     speed: { top: sideTop, left: sideInset },
@@ -184,9 +190,9 @@ const SkillTreeHub = ({
 
       <View style={[styles.diamondStageWrap, { minHeight: stageWrapMinHeight }]}>
         <View style={[styles.diamondStage, { width: layoutWidth, height: hubHeight }]}>
-          <View style={[styles.centerLine, styles.centerLineVertical, { top: circleSize * 0.58, left: layoutWidth / 2 - 1, height: hubHeight - circleSize * 1.16 }]} />
-          <View style={[styles.centerLine, styles.centerLineLeft, { top: centerTop + centerSize / 2, left: circleSize * 0.82, width: centerLeft - circleSize * 0.42 }]} />
-          <View style={[styles.centerLine, styles.centerLineRight, { top: centerTop + centerSize / 2, right: circleSize * 0.82, width: centerLeft - circleSize * 0.42 }]} />
+          <View style={[styles.centerLine, styles.centerLineVertical, { top: circleSize + spacing.sm, left: layoutWidth / 2 - 1, height: bottomTop - circleSize - spacing.lg }]} />
+          <View style={[styles.centerLine, styles.centerLineLeft, { top: centerY, left: leftConnectorStart, width: leftConnectorWidth }]} />
+          <View style={[styles.centerLine, styles.centerLineRight, { top: centerY, left: rightConnectorStart, width: rightConnectorWidth }]} />
           <View style={[styles.centerOrb, { width: centerSize, height: centerSize, borderRadius: centerSize / 2, left: centerLeft, top: centerTop }]}>
             <View pointerEvents="none" style={styles.centerGlow} />
             <Ionicons name="sparkles" size={20} color={colors.coin} />
@@ -514,8 +520,8 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.xl
+    paddingTop: 0,
+    paddingBottom: spacing.xxl
   },
   centerLine: {
     position: 'absolute',
@@ -551,11 +557,12 @@ const styles = StyleSheet.create({
   },
   centerPoints: {
     color: colors.coin,
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '900'
   },
   centerLabel: {
-    textAlign: 'center'
+    textAlign: 'center',
+    fontSize: 10
   },
   branchCircle: {
     position: 'absolute',
@@ -563,7 +570,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(7, 17, 31, 0.94)',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
     shadowOpacity: 0.22,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 0 },
@@ -574,31 +582,33 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.97 }]
   },
   branchIconOrb: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.xxs
   },
   branchName: {
+    fontSize: 12,
     fontWeight: '900',
     textAlign: 'center'
   },
   branchCount: {
     color: colors.text,
+    fontSize: 10,
     fontWeight: '800'
   },
   branchProgressTrack: {
-    width: '76%',
+    width: '66%',
     height: 5,
     borderRadius: radii.pill,
     backgroundColor: colors.black,
     borderWidth: 1,
     borderColor: colors.borderDim,
     overflow: 'hidden',
-    marginTop: spacing.xxs
+    marginTop: 3
   },
   branchProgressFill: {
     height: '100%',
