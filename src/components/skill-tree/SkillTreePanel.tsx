@@ -195,9 +195,9 @@ const SkillTreeHub = ({
           <View style={[styles.centerLine, styles.centerLineRight, { top: centerY, left: rightConnectorStart, width: rightConnectorWidth }]} />
           <View style={[styles.centerOrb, { width: centerSize, height: centerSize, borderRadius: centerSize / 2, left: centerLeft, top: centerTop }]}>
             <View pointerEvents="none" style={styles.centerGlow} />
-            <Ionicons name="sparkles" size={20} color={colors.coin} />
             <AppText style={styles.centerPoints}>{availablePoints}</AppText>
-            <AppText variant="caption" muted style={styles.centerLabel}>Skill Points</AppText>
+            <AppText variant="caption" muted style={styles.centerLabel}>Skill</AppText>
+            <AppText variant="caption" muted style={styles.centerLabel}>Points</AppText>
           </View>
 
           {branches.map((branch) => (
@@ -246,11 +246,11 @@ const BranchCircle = ({
       ]}
     >
       <View style={[styles.branchIconOrb, { borderColor: branch.color, backgroundColor: `${branch.color}18` }]}>
-        <Ionicons name={branch.icon as keyof typeof Ionicons.glyphMap} size={22} color={branch.color} />
+        <Ionicons name={branch.icon as keyof typeof Ionicons.glyphMap} size={20} color={branch.color} />
       </View>
       <AppText style={[styles.branchName, { color: branch.color }]} numberOfLines={1}>{branch.name}</AppText>
-      <AppText variant="caption" muted>Stat Lv {branch.statLevel}</AppText>
-      <AppText variant="caption" style={styles.branchCount}>{branch.unlockedCount}/{branch.totalCount} unlocked</AppText>
+      <AppText variant="caption" muted style={styles.branchLevel} numberOfLines={1}>LV {branch.statLevel}</AppText>
+      <AppText variant="caption" style={styles.branchCount} numberOfLines={1}>{branch.unlockedCount}/{branch.totalCount}</AppText>
       <View style={styles.branchProgressTrack}>
         <View style={[styles.branchProgressFill, { width: progressWidth, backgroundColor: branch.color }]} />
       </View>
@@ -520,8 +520,8 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 0,
-    paddingBottom: spacing.xxl
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xl
   },
   centerLine: {
     position: 'absolute',
@@ -545,6 +545,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(3, 7, 19, 0.94)',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: spacing.xs,
     overflow: 'hidden',
     ...shadows.cyanGlow
   },
@@ -557,12 +558,13 @@ const styles = StyleSheet.create({
   },
   centerPoints: {
     color: colors.coin,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900'
   },
   centerLabel: {
     textAlign: 'center',
-    fontSize: 10
+    fontSize: 9,
+    lineHeight: 10
   },
   branchCircle: {
     position: 'absolute',
@@ -570,7 +572,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(7, 17, 31, 0.94)',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: spacing.sm,
+    gap: 1,
+    paddingHorizontal: spacing.xs,
     paddingVertical: spacing.xs,
     shadowOpacity: 0.22,
     shadowRadius: 12,
@@ -582,26 +585,32 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.97 }]
   },
   branchIconOrb: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.xxs
+    marginBottom: 1
   },
   branchName: {
     fontSize: 12,
     fontWeight: '900',
-    textAlign: 'center'
+    textAlign: 'center',
+    lineHeight: 14
+  },
+  branchLevel: {
+    fontSize: 10,
+    lineHeight: 12
   },
   branchCount: {
     color: colors.text,
     fontSize: 10,
+    lineHeight: 12,
     fontWeight: '800'
   },
   branchProgressTrack: {
-    width: '66%',
+    width: '60%',
     height: 5,
     borderRadius: radii.pill,
     backgroundColor: colors.black,
